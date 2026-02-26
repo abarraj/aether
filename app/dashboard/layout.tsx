@@ -6,8 +6,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
-  Database,
-  GitBranch,
+  FileSpreadsheet,
+  Network,
   MessageSquare,
   Bell,
   Settings,
@@ -34,8 +34,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
-    { icon: Database, label: 'Data', href: '/dashboard/data' },
-    { icon: GitBranch, label: 'Data Model', href: '/dashboard/data-model' },
+    { icon: FileSpreadsheet, label: 'Connected Data', href: '/dashboard/data' },
+    { icon: Network, label: 'Your Business', href: '/dashboard/data-model' },
     { icon: MessageSquare, label: 'AI Assistant', href: '/dashboard/ai-assistant' },
     { icon: Bell, label: 'Alerts', href: '/dashboard/alerts' },
     { icon: Settings, label: 'Settings', href: '/dashboard/settings' },

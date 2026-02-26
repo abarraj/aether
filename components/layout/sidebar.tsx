@@ -50,7 +50,12 @@ export function Sidebar({
       <div className="flex-1 p-3">
         <div className="space-y-1">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive =
+              item.href === '/dashboard/data-model'
+                ? pathname.startsWith('/dashboard/data-model')
+                : item.href === '/dashboard/data'
+                  ? pathname.startsWith('/dashboard/data') && !pathname.startsWith('/dashboard/data-model')
+                  : pathname === item.href;
 
             return (
               <Link

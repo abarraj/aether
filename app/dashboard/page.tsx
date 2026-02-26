@@ -11,7 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { FileWarning } from 'lucide-react';
+import { Sparkles, Info } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 
 import { useUser } from '@/hooks/use-user';
@@ -51,6 +51,17 @@ export default function DashboardPage() {
     profile?.full_name?.split(' ')[0] ??
     org?.name?.split(' ')[0] ??
     'there';
+
+  const hour = new Date().getHours();
+  const greeting =
+    hour >= 5 && hour < 12
+      ? 'Good morning'
+      : hour >= 12 && hour < 17
+        ? 'Good afternoon'
+        : hour >= 17 && hour < 21
+          ? 'Good evening'
+          : 'Working late';
+  const greetingSuffix = hour >= 21 || hour < 5 ? '?' : ',';
 
   const handlePresetChange = (nextPreset: RangePreset) => {
     const end = new Date();
@@ -114,6 +125,9 @@ export default function DashboardPage() {
   const formatPercent = (value: number): string =>
     `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
 
+  const periodLabel =
+    preset === '7d' ? 'last week' : preset === '30d' ? 'last month' : 'last quarter';
+
   const chartData =
     kpis?.series.map((point) => ({
       dateLabel: format(new Date(point.date), 'MMM d'),
@@ -126,10 +140,10 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-4xl font-semibold tracking-tighter">
-            Good morning, {greetingName}
+            {greeting}{greetingSuffix} {greetingName}
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Here&apos;s what Aether sees across your operations for this period.
+            Here&apos;s how your business is doing.
           </p>
         </div>
 
@@ -144,9 +158,9 @@ export default function DashboardPage() {
                   preset === option ? 'bg-zinc-900 text-slate-100' : 'text-slate-400'
                 }`}
               >
-                {option === '7d' && 'Last 7 days'}
-                {option === '30d' && 'Last 30 days'}
-                {option === '90d' && 'Last 90 days'}
+                {option === '7d' && 'This week'}
+                {option === '30d' && 'This month'}
+                {option === '90d' && 'This quarter'}
               </button>
             ))}
           </div>
@@ -181,7 +195,7 @@ export default function DashboardPage() {
               URL.revokeObjectURL(url);
             }}
           >
-            Export CSV
+            Export
           </button>
         </div>
       </div>
@@ -190,29 +204,30 @@ export default function DashboardPage() {
         <div className="mt-10 flex justify-center">
           <div className="flex max-w-md flex-col items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
-              <FileWarning className="h-6 w-6 text-emerald-400" />
+              <Sparkles className="h-6 w-6 text-emerald-400" />
             </div>
-            <h2 className="text-lg font-semibold tracking-tight">No KPIs yet</h2>
+            <h2 className="text-lg font-semibold tracking-tight">Let&apos;s get your numbers in here</h2>
             <p className="mt-2 text-sm text-slate-400">
-              Upload a CSV from your systems so Aether can compute revenue, labor, and utilization
-              metrics for your business.
+              Connect a spreadsheet or paste a Google Sheets link, and Aether will start tracking
+              your revenue, costs, and performance automatically.
             </p>
             <button
               type="button"
-              className="mt-6 text-xs font-medium text-emerald-400 underline-offset-4 hover:text-emerald-300 hover:underline"
+              className="mt-6 rounded-3xl bg-emerald-500 px-6 py-3 text-sm font-medium text-slate-950 hover:bg-emerald-600 transition"
               onClick={() => {
                 window.location.href = '/dashboard/data';
               }}
             >
-              Go to data sources
+              Connect Your Data
             </button>
+            <p className="mt-3 text-xs text-slate-500">Takes about 2 minutes</p>
           </div>
         </div>
       ) : (
         <>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
-              <div className="text-sm text-slate-400">Total Revenue</div>
+              <div className="text-sm text-slate-400">Revenue</div>
               <div className="mt-3 text-4xl font-semibold tracking-tighter">
                 {kpis ? (
                   <AnimatedNumber
@@ -238,13 +253,13 @@ export default function DashboardPage() {
               </div>
               <div className="mt-1 text-sm text-emerald-400">
                 {kpis?.changes.revenuePct != null
-                  ? `${formatPercent(kpis.changes.revenuePct)} vs previous period`
+                  ? `${formatPercent(kpis.changes.revenuePct)} from ${periodLabel}`
                   : 'No prior period yet'}
               </div>
             </div>
 
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
-              <div className="text-sm text-slate-400">Labor Cost</div>
+              <div className="text-sm text-slate-400">Staff Costs</div>
               <div className="mt-3 text-4xl font-semibold tracking-tighter">
                 {kpis ? (
                   <AnimatedNumber
@@ -270,13 +285,21 @@ export default function DashboardPage() {
               </div>
               <div className="mt-1 text-sm text-emerald-400">
                 {kpis?.changes.laborCostPct != null
-                  ? `${formatPercent(kpis.changes.laborCostPct)} vs previous period`
+                  ? `${formatPercent(kpis.changes.laborCostPct)} from ${periodLabel}`
                   : 'No prior period yet'}
               </div>
             </div>
 
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
-              <div className="text-sm text-slate-400">Avg Utilization</div>
+              <div className="flex items-center gap-1.5 text-sm text-slate-400">
+                Capacity
+                <span
+                  className="text-slate-500 cursor-help"
+                  title="How full your classes, rooms, or tables are on average"
+                >
+                  <Info className="h-3 w-3" />
+                </span>
+              </div>
               <div className="mt-3 text-4xl font-semibold tracking-tighter">
                 {kpis ? (
                   <AnimatedNumber
@@ -290,13 +313,13 @@ export default function DashboardPage() {
               </div>
               <div className="mt-1 text-sm text-emerald-400">
                 {kpis?.changes.utilizationPct != null
-                  ? `${formatPercent(kpis.changes.utilizationPct)} vs previous period`
+                  ? `${formatPercent(kpis.changes.utilizationPct)} from ${periodLabel}`
                   : 'No prior period yet'}
               </div>
             </div>
 
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
-              <div className="text-sm text-slate-400">Forecast Revenue</div>
+              <div className="text-sm text-slate-400">Revenue Forecast</div>
               <div className="mt-3 text-4xl font-semibold tracking-tighter">
                 {kpis?.forecast ? (
                   <AnimatedNumber
@@ -328,7 +351,7 @@ export default function DashboardPage() {
 
           <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-8">
             <div className="mb-6 flex items-center justify-between">
-              <div className="font-medium">Revenue &amp; Labor Trend</div>
+              <div className="font-medium">Revenue &amp; Staff Costs</div>
               <div className="text-xs text-slate-500">
                 {range.start} → {range.end}
               </div>

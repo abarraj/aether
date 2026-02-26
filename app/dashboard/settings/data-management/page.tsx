@@ -323,17 +323,17 @@ export default function DataManagementSettingsPage() {
           </div>
         </section>
 
-        {/* Data sources */}
+        {/* Connected data */}
         <section className="space-y-3">
           <div className="text-[11px] font-semibold uppercase tracking-[2px] text-emerald-400">
-            Data sources
+            Connected data
           </div>
           <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-4 text-xs">
             {isLoading ? (
               <div className="py-6 text-center text-slate-500">Loading data sources…</div>
             ) : sources.length === 0 ? (
               <div className="py-6 text-center text-slate-500">
-                No datasets yet. Upload CSVs or connect integrations to populate your workspace.
+                No data connected yet. Upload a spreadsheet or connect an integration to get started.
               </div>
             ) : (
               <div className="space-y-2">

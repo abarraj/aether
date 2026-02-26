@@ -227,7 +227,7 @@ export default function SettingsPage() {
         <div className="mb-3">
           <h2 className="text-sm font-semibold tracking-tight text-red-400">Danger zone</h2>
           <p className="mt-1 text-xs text-slate-500">
-            Deleting your organization will permanently remove all data, including uploads, KPIs,
+            Deleting your organization will permanently remove all data, including connected data and metrics,
             and alerts.
           </p>
         </div>

@@ -46,6 +46,11 @@ export function useOntology(): {
     properties?: Record<string, unknown>;
     source_upload_id?: string | null;
   }) => Promise<Entity | null>;
+  updateEntity: (
+    id: string,
+    input: Partial<{ name: string; properties: Record<string, unknown> }>,
+  ) => Promise<Entity | null>;
+  deleteEntity: (id: string) => Promise<boolean>;
   createRelationshipType: (input: {
     name: string;
     from_type_id: string;
@@ -195,6 +200,44 @@ export function useOntology(): {
     [org?.id, fetchAll],
   );
 
+  const updateEntity = useCallback(
+    async (
+      id: string,
+      input: Partial<{ name: string; properties: Record<string, unknown> }>,
+    ) => {
+      if (!org?.id) return null;
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('entities')
+        .update({ ...input, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('org_id', org.id)
+        .select()
+        .single();
+      if (error) return null;
+      await fetchAll();
+      return data as Entity;
+    },
+    [org?.id, fetchAll],
+  );
+
+  const deleteEntity = useCallback(
+    async (id: string) => {
+      if (!org?.id) return false;
+      const supabase = createClient();
+      await supabase
+        .from('entity_relationships')
+        .delete()
+        .eq('org_id', org.id)
+        .or(`from_entity_id.eq.${id},to_entity_id.eq.${id}`);
+      const { error } = await supabase.from('entities').delete().eq('id', id).eq('org_id', org.id);
+      if (error) return false;
+      await fetchAll();
+      return true;
+    },
+    [org?.id, fetchAll],
+  );
+
   const createRelationshipType = useCallback(
     async (input: {
       name: string;
@@ -260,6 +303,8 @@ export function useOntology(): {
     updateEntityType,
     deleteEntityType,
     createEntity,
+    updateEntity,
+    deleteEntity,
     createRelationshipType,
     createRelationship,
   };

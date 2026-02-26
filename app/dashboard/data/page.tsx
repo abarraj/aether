@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, FileSpreadsheet, Loader2, Trash2 } from 'lucide-react';
+import { Database, FileSpreadsheet, Loader2, Link2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,8 @@ export default function DataPage() {
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [isLoadingUploads, setIsLoadingUploads] = useState<boolean>(false);
   const [isDropzoneOpen, setIsDropzoneOpen] = useState<boolean>(false);
+  const [addDataModalOpen, setAddDataModalOpen] = useState<boolean>(false);
+  const [googleSheetsOpen, setGoogleSheetsOpen] = useState<boolean>(false);
   const [uploadToDelete, setUploadToDelete] = useState<UploadRow | null>(null);
   const [confirmFilename, setConfirmFilename] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -141,7 +143,7 @@ export default function DataPage() {
       .eq('org_id', org.id);
     if (uploadsError) {
       setIsDeleting(false);
-      toast.error('Failed to remove data source. Please try again.');
+      toast.error('Failed to remove file. Please try again.');
       return;
     }
 
@@ -160,7 +162,7 @@ export default function DataPage() {
       // non-blocking
     }
 
-    toast.success('Data source deleted');
+    toast.success('Data file removed');
     setUploadToDelete(null);
     setConfirmFilename('');
     setIsDeleting(false);
@@ -170,8 +172,9 @@ export default function DataPage() {
   const renderStatusBadge = (status: UploadStatus) => {
     if (status === 'ready') {
       return (
-        <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
-          Ready
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          Connected
         </span>
       );
     }
@@ -198,19 +201,18 @@ export default function DataPage() {
     <div className="flex min-h-screen flex-col bg-[#0A0A0A] text-slate-200">
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tighter">Data Sources</h1>
+          <h1 className="text-3xl font-semibold tracking-tighter">Connected Data</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Connect your exports so Aether can compute revenue, labor, and utilization in real
-            time.
+            Your spreadsheets and data connections.
           </p>
         </div>
         <Button
           type="button"
           className="rounded-2xl bg-emerald-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-600 active:scale-[0.985]"
-          onClick={() => setIsDropzoneOpen(true)}
+          onClick={() => setAddDataModalOpen(true)}
         >
-          <FileSpreadsheet className="mr-2 h-4 w-4" />
-          Upload CSV
+          <Plus className="mr-2 h-4 w-4" />
+          Add Data
         </Button>
       </div>
 
@@ -222,49 +224,59 @@ export default function DataPage() {
         </div>
       ) : !hasUploads ? (
         <div className="mt-16 flex justify-center">
-          <div className="flex max-w-md flex-col items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
-              <Database className="h-6 w-6 text-emerald-400" />
-            </div>
-            <h2 className="text-lg font-semibold tracking-tight">No data sources yet</h2>
+          <div className="flex max-w-2xl flex-col items-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+            <h2 className="text-lg font-semibold tracking-tight">No data connected yet</h2>
             <p className="mt-2 text-sm text-slate-400">
-              Upload a CSV export from your POS, billing, or booking system. Aether will map and
-              normalize it into a single operational model.
+              Connect your first spreadsheet and Aether will automatically detect your revenue,
+              costs, staff, and more.
             </p>
-            <Button
-              type="button"
-              className="mt-6 rounded-2xl bg-emerald-500 px-6 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-600 active:scale-[0.985]"
-              onClick={() => setIsDropzoneOpen(true)}
-            >
-              Upload your first CSV
-            </Button>
+            <div className="mt-8 grid grid-cols-2 gap-4 w-full max-w-lg">
+              <button
+                type="button"
+                onClick={() => setIsDropzoneOpen(true)}
+                className="flex flex-col items-start rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
+              >
+                <FileSpreadsheet className="h-8 w-8 text-emerald-400 mb-3" />
+                <span className="font-medium text-slate-100">Upload a spreadsheet</span>
+                <span className="mt-1 text-sm text-slate-400">Drag in an Excel or CSV file from your computer</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setGoogleSheetsOpen(true)}
+                className="flex flex-col items-start rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
+              >
+                <Link2 className="h-8 w-8 text-emerald-400 mb-3" />
+                <span className="font-medium text-slate-100">Connect Google Sheets</span>
+                <span className="mt-1 text-sm text-slate-400">Paste a link to a Google Sheet and we&apos;ll keep it in sync</span>
+              </button>
+            </div>
           </div>
         </div>
       ) : (
         <div className="rounded-3xl border border-zinc-800 bg-zinc-950/80 p-6">
           <div className="mb-4 flex items-center justify-between">
             <p className="text-xs text-slate-400">
-              {uploads.length} upload{uploads.length === 1 ? '' : 's'} connected
+              {uploads.length} file{uploads.length === 1 ? '' : 's'} connected
             </p>
           </div>
           <div className="overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950">
             <table className="min-w-full border-collapse text-left text-sm text-slate-200">
               <thead className="bg-zinc-950/80">
                 <tr>
-                  <th className="border-b border-zinc-900 px-4 py-3 text-xs font-medium text-slate-400">
-                    File
+                  <th className="border-b border-zinc-900 px-4 py-3 text-xs font-medium text-slate-400 w-10">
+                    Type
                   </th>
                   <th className="border-b border-zinc-900 px-4 py-3 text-xs font-medium text-slate-400">
-                    Data type
+                    Name
                   </th>
                   <th className="border-b border-zinc-900 px-4 py-3 text-xs font-medium text-slate-400">
-                    Rows
+                    Records
                   </th>
                   <th className="border-b border-zinc-900 px-4 py-3 text-xs font-medium text-slate-400">
                     Status
                   </th>
                   <th className="border-b border-zinc-900 px-4 py-3 text-xs font-medium text-slate-400">
-                    Uploaded
+                    Added
                   </th>
                   <th className="w-10 border-b border-zinc-900" aria-label="Delete" />
                 </tr>
@@ -276,11 +288,11 @@ export default function DataPage() {
                     className="group cursor-pointer border-b border-zinc-900 last:border-0 hover:bg-zinc-900/60"
                     onClick={() => router.push(`/dashboard/data/${upload.id}`)}
                   >
-                    <td className="px-4 py-3 text-xs font-medium text-slate-100">
-                      {upload.file_name}
+                    <td className="px-4 py-3 text-slate-400">
+                      <FileSpreadsheet className="h-4 w-4" />
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
-                      {upload.data_type || 'custom'}
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-medium text-slate-100">{upload.file_name}</span>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-400">
                       {upload.row_count ?? '—'}
@@ -331,8 +343,8 @@ export default function DataPage() {
                 Delete {uploadToDelete.file_name}?
               </h2>
               <p className="mx-auto mt-2 max-w-sm text-sm text-slate-400">
-                This will permanently remove the file, all parsed data rows, and any KPI snapshots
-                generated from this source. This action cannot be undone.
+                This will permanently remove the file, all parsed data, and your numbers generated
+                from this source. This action cannot be undone.
               </p>
               <label className="mt-4 w-full text-left text-xs text-slate-500">
                 Type <span className="font-mono text-slate-400">{uploadToDelete.file_name}</span> to
@@ -376,6 +388,83 @@ export default function DataPage() {
                 </Button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Data modal: two cards */}
+      {addDataModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setAddDataModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="max-w-lg w-full rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddDataModalOpen(false);
+                  setIsDropzoneOpen(true);
+                }}
+                className="flex flex-col items-start rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
+              >
+                <FileSpreadsheet className="h-8 w-8 text-emerald-400 mb-3" />
+                <span className="font-medium text-slate-100">Upload a spreadsheet</span>
+                <span className="mt-1 text-sm text-slate-400">Drag in an Excel or CSV file from your computer</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddDataModalOpen(false);
+                  setGoogleSheetsOpen(true);
+                }}
+                className="flex flex-col items-start rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
+              >
+                <Link2 className="h-8 w-8 text-emerald-400 mb-3" />
+                <span className="font-medium text-slate-100">Connect Google Sheets</span>
+                <span className="mt-1 text-sm text-slate-400">Paste a link to a Google Sheet and we&apos;ll keep it in sync</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Google Sheets connection placeholder */}
+      {googleSheetsOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setGoogleSheetsOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="max-w-md w-full rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-slate-100">Connect Google Sheets</h3>
+            <p className="mt-1 text-sm text-slate-400">Google Sheets sync is coming soon. For now, export your sheet as CSV and upload it.</p>
+            <Button
+              type="button"
+              className="mt-4 rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-600"
+              onClick={() => {
+                setGoogleSheetsOpen(false);
+                setIsDropzoneOpen(true);
+              }}
+            >
+              Upload a spreadsheet instead
+            </Button>
+            <button
+              type="button"
+              className="mt-3 ml-3 text-sm text-slate-400 hover:text-slate-200"
+              onClick={() => setGoogleSheetsOpen(false)}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}

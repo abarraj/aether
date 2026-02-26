@@ -24,10 +24,10 @@ const settingsNavItems = [
   { label: 'General', href: '/dashboard/settings', icon: Settings },
   { label: 'Team & Roles', href: '/dashboard/settings/team', icon: Users },
   { label: 'Billing', href: '/dashboard/settings/billing', icon: CreditCard },
-  { label: 'Integrations', href: '/dashboard/settings/integrations', icon: Plug },
+  { label: 'Connections', href: '/dashboard/settings/integrations', icon: Plug },
   { label: 'Notifications', href: '/dashboard/settings/notifications', icon: Bell },
-  { label: 'Data Management', href: '/dashboard/settings/data-management', icon: Database },
-  { label: 'Audit Log', href: '/dashboard/settings/audit-log', icon: ScrollText },
+  { label: 'Storage & Data', href: '/dashboard/settings/data-management', icon: Database },
+  { label: 'Activity Log', href: '/dashboard/settings/audit-log', icon: ScrollText },
   { label: 'Security', href: '/dashboard/settings/security', icon: Shield },
 ];
 

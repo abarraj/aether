@@ -237,7 +237,7 @@ export default function OnboardingPage() {
         return;
       }
 
-      toast.success('Workspace ready. Redirecting to your dashboard.');
+      toast.success('Aether is ready. Redirecting to your dashboard.');
       router.push('/dashboard');
     } catch {
       toast.error('Something went wrong completing onboarding.');
@@ -246,9 +246,9 @@ export default function OnboardingPage() {
   };
 
   const renderStepLabel = () => {
-    if (step === 1) return 'Name your business';
-    if (step === 2) return 'Set your defaults';
-    return 'Connect your first data';
+    if (step === 1) return 'Your Business';
+    if (step === 2) return 'Connect Data';
+    return 'Ready';
   };
 
   return (
@@ -261,14 +261,18 @@ export default function OnboardingPage() {
           </div>
           <div className="flex flex-col items-center gap-2">
             <StepIndicator currentStep={step} totalSteps={3} />
-            <p className="text-xs text-slate-500">{`Step ${step} of 3`}</p>
+            <p className="text-xs text-slate-500">{renderStepLabel()}</p>
           </div>
         </div>
 
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tighter mb-1">{renderStepLabel()}</h1>
+          <h1 className="text-2xl font-semibold tracking-tighter mb-1">
+            {step === 1 && 'Tell us about your business'}
+            {step === 2 && 'Set your defaults'}
+            {step === 3 && 'Connect your data'}
+          </h1>
           <p className="text-sm text-slate-400">
-            Let&apos;s set up your workspace so Aether can operate like your AI COO from day one.
+            Let&apos;s get your business set up so Aether can help you from day one.
           </p>
         </div>
 
@@ -421,8 +425,7 @@ export default function OnboardingPage() {
                 className="space-y-5"
               >
                 <p className="text-sm text-slate-400">
-                  You can connect POS exports, membership data, or financials. Start with a CSV
-                  export now or skip and we&apos;ll remind you later.
+                  You can connect spreadsheets or export files from your systems. Add one now or skip and connect later from your dashboard.
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -439,7 +442,7 @@ export default function OnboardingPage() {
                     <div className="flex items-center gap-2">
                       <UploadCloud className="h-4 w-4 text-emerald-400" />
                       <span className="text-sm font-medium text-slate-100">
-                        Upload a CSV
+                        Upload a spreadsheet
                       </span>
                     </div>
                     <p className="text-xs text-slate-500">
@@ -479,7 +482,7 @@ export default function OnboardingPage() {
                       </span>
                     </div>
                     <p className="text-xs text-slate-500">
-                      You can always connect data sources from your dashboard.
+                      You can always connect data from your dashboard.
                     </p>
                   </button>
                 </div>

@@ -162,14 +162,14 @@ export default function AetherLanding() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3">
-                      <div className="text-slate-400">Labor cost</div>
+                      <div className="text-slate-400">Staff costs</div>
                       <div className="mt-1 text-lg font-semibold tracking-tight">$52,340</div>
                       <div className="text-[11px] text-emerald-400">28.7% of revenue</div>
                     </div>
                     <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3">
-                      <div className="text-slate-400">Utilization</div>
+                      <div className="text-slate-400">Capacity</div>
                       <div className="mt-1 text-lg font-semibold tracking-tight">84%</div>
-                      <div className="text-[11px] text-slate-500">Lagree peak at 94%</div>
+                      <div className="text-[11px] text-slate-500">Peak capacity: 94%</div>
                     </div>
                   </div>
                 </div>
@@ -263,19 +263,19 @@ export default function AetherLanding() {
             <div className="flex gap-4 overflow-x-auto pb-2">
               {[
                 {
-                  title: 'Executive dashboard',
+                  title: 'Real-time Dashboard',
                   description:
                     'Daily brief of revenue, labor, and utilization across every location in one calm view.',
                 },
                 {
-                  title: 'AI Chief Operating Officer',
+                  title: 'AI Business Advisor',
                   description:
                     'Ask questions in plain English and get scenario-tested answers grounded in your data.',
                 },
                 {
-                  title: 'Alerts & anomalies',
+                  title: 'Smart Alerts',
                   description:
-                    'Automatic detection of drifts and outliers—before they show up in the P&L.',
+                    'Automatic detection of problems and opportunities — before they show up in your bottom line.',
                 },
               ].map((module) => (
                 <div

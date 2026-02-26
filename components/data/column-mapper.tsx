@@ -1,5 +1,5 @@
 // Column mapping UI for connecting raw upload columns to Aether semantic fields.
-// Includes optional step: Map to Data Model (create entities from this data).
+// Includes optional step: Map to your business (create entities from this data).
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -85,7 +85,7 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
     }, {}),
   );
 
-  // Step 2: Map to Data Model
+  // Step 2: Map to your business
   const [enableOntology, setEnableOntology] = useState(false);
   const [entityTypeId, setEntityTypeId] = useState('');
   const [newEntityTypeName, setNewEntityTypeName] = useState('');
@@ -180,7 +180,7 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
                 Map your columns
               </h3>
               <p className="text-xs text-slate-500">
-                Tell Aether what each column represents so we can generate accurate KPIs.
+                Tell Aether what each column represents so we can generate accurate metrics.
               </p>
             </div>
             <div className="space-y-1 text-right">
@@ -274,7 +274,7 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
               onClick={() => setStep(2)}
               className="rounded-2xl bg-emerald-500 px-5 py-2 text-xs font-medium text-slate-950 hover:bg-emerald-600"
             >
-              Next: Map to Data Model
+              Next: Map to your business
             </Button>
           </div>
         </>
@@ -286,10 +286,10 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
             <Link2 className="h-4 w-4 text-emerald-400" />
             <div>
               <h3 className="text-sm font-semibold tracking-tight text-slate-100">
-                Map to Data Model
+                Map to your business
               </h3>
               <p className="text-xs text-slate-500">
-                Optionally create entities from this data and link to your ontology.
+                Optionally create categories and connections from this data.
               </p>
             </div>
           </div>
@@ -406,7 +406,7 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
                 <div>
                   <div className="mb-2 flex items-center justify-between">
                     <label className="text-xs font-medium text-slate-400">
-                      Columns that reference other entity types
+                      Columns that reference other categories
                     </label>
                     <button
                       type="button"

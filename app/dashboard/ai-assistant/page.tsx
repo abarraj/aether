@@ -39,15 +39,15 @@ export default function AIAssistantPage() {
 
   const suggestedPrompts = hasData
     ? [
-        'Give me a concise performance brief for this week with 3 action items.',
-        'Where are we leaving the most revenue on the table right now?',
-        'How is labor cost trending relative to revenue over the last 30 days?',
-        'Which days or locations have the lowest utilization, and what should we do about it?',
-        'Stress test next month: what happens if demand rises 20% and we change staffing by 10%?',
-        'Show me anomalies in revenue, labor, or attendance that I should pay attention to.',
+        'How is my business doing this week?',
+        'Where am I losing the most money?',
+        'Are my staff costs too high?',
+        'Which days are my busiest and slowest?',
+        'What should I change to make more money next month?',
+        'Are there any red flags I should know about?',
       ]
     : [
-        'Upload your first dataset to unlock AI intelligence. Once data is connected, I can analyze revenue, labor, and utilization in real time.',
+        'Connect your data first, then I can analyze your entire business. Head to Connected Data to get started.',
       ];
 
   const handleSuggestedClick = async (prompt: string) => {
@@ -71,7 +71,7 @@ export default function AIAssistantPage() {
         <div className="hidden lg:flex w-96 flex-col border-r border-zinc-800 bg-zinc-950">
           <div className="flex-shrink-0 p-8">
             <div className="mb-6 text-xs uppercase tracking-[2px] text-emerald-400">
-              AI COO Insights
+              Suggested Questions
             </div>
             <div className="text-sm text-slate-400">
               {hasData
@@ -101,8 +101,7 @@ export default function AIAssistantPage() {
               Welcome, {greetingName}
             </div>
             <div className="text-sm text-slate-300">
-              Ask me about revenue, labor, utilization, or any operational scenario. I&apos;ll use
-              your data to respond with clear recommendations.
+              Ask me anything about your business — revenue, staffing, performance, or what to do next.
             </div>
             <div className="mt-4">
               <RecommendationBanner />
@@ -134,7 +133,7 @@ export default function AIAssistantPage() {
               <div className="flex justify-start">
                 <div className="flex items-center gap-3 rounded-3xl border border-zinc-800 bg-zinc-900 px-6 py-4 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Analyzing your operational data…
+                  Thinking about your business…
                 </div>
               </div>
             )}
@@ -160,8 +159,8 @@ export default function AIAssistantPage() {
                 }
                 placeholder={
                   hasData
-                    ? `Ask anything about ${orgLabel}…`
-                    : 'Upload your first dataset, then ask me about your business…'
+                    ? 'Ask me anything...'
+                    : 'Connect your data first to chat...'
                 }
                 className="flex-1 rounded-3xl border border-zinc-800 bg-zinc-950 px-7 py-6 text-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                 disabled={isLoading}

@@ -49,7 +49,7 @@ const AVAILABLE_INTEGRATIONS: {
   // Data import
   {
     id: 'csv',
-    name: 'CSV Upload',
+    name: 'Spreadsheet upload',
     category: 'Data Import',
     description: 'Flat-file imports for historical or ad-hoc datasets.',
     status: 'connected',
@@ -434,7 +434,7 @@ export default function IntegrationsSettingsPage() {
         {/* Active connections */}
         <section className="space-y-4">
           <div className="text-[11px] font-semibold uppercase tracking-[2px] text-emerald-400">
-            Active connections
+            Connected
           </div>
 
           {isLoading ? (
@@ -445,7 +445,7 @@ export default function IntegrationsSettingsPage() {
             <div className="rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/70 px-6 py-8 text-xs text-slate-400">
               <div className="mb-1 text-sm font-medium text-slate-200">No integrations connected</div>
               <p>
-                No integrations connected yet. Upload a CSV or connect a tool to start building your
+                No connections yet. Upload a spreadsheet or connect a tool to start building your
                 intelligence layer.
               </p>
             </div>
@@ -455,7 +455,7 @@ export default function IntegrationsSettingsPage() {
                 renderActiveConnectionCard({
                   icon: <Upload className="h-4 w-4" />,
                   name: upload.file_name,
-                  subtitle: 'CSV upload',
+                  subtitle: 'Spreadsheet upload',
                   meta: `${new Date(upload.created_at).toLocaleString()} • ${
                     upload.row_count ?? 0
                   } rows`,
@@ -480,7 +480,7 @@ export default function IntegrationsSettingsPage() {
         {/* Available integrations */}
         <section className="space-y-4">
           <div className="text-[11px] font-semibold uppercase tracking-[2px] text-emerald-400">
-            Available integrations
+            Available
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

@@ -27,6 +27,7 @@ export interface EntityProperty {
   key: string;          // 'revenue', 'email', 'capacity'
   label: string;        // 'Revenue', 'Email', 'Capacity'
   type: PropertyType;
+  visible?: boolean;    // show in AI context and entity cards; default true
 }
 
 export interface EntityType {

@@ -87,7 +87,7 @@ export default function BillingSettingsPage() {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 text-xs">
               <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3">
-                <div className="text-slate-400">Data sources</div>
+                <div className="text-slate-400">Data connections</div>
                 <div className="mt-1 text-sm font-semibold text-slate-100">
                   {usage.dataSources} / {formatLimit(limits.dataSources)}
                 </div>
@@ -149,7 +149,7 @@ export default function BillingSettingsPage() {
               <tbody>
                 <tr>
                   <td className="border-b border-zinc-800 px-3 py-2 text-slate-400">
-                    Data sources
+                    Data connections
                   </td>
                   {(['starter', 'growth', 'enterprise'] as Plan[]).map((plan) => (
                     <td key={plan} className="border-b border-zinc-800 px-3 py-2">
