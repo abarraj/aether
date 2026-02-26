@@ -135,14 +135,14 @@ export default function OnboardingPage() {
       }
     }
 
-    setStep((current) => Math.min((current + 1) as Step, 3));
+    setStep((current) => Math.min(current + 1, 3) as Step);
   };
 
   const goBack = () => {
     if (step === 1) {
       return;
     }
-    setStep((current) => Math.max((current - 1) as Step, 1));
+    setStep((current) => Math.max(current - 1, 1) as Step);
   };
 
   const handleFileCardClick = () => {

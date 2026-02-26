@@ -16,7 +16,7 @@ export interface RealtimeFilter {
  * Generic Supabase Realtime subscription hook for a single table.
  * Subscribes to INSERT/UPDATE/DELETE events and calls the provided callback.
  */
-export function useRealtimeTable<T>(
+export function useRealtimeTable<T extends Record<string, any>>(
   table: string,
   filter?: RealtimeFilter,
   onChange?: (payload: RealtimePostgresChangesPayload<T>) => void,

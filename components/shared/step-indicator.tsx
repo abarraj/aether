@@ -9,7 +9,7 @@ interface StepIndicatorProps {
   totalSteps: number;
 }
 
-export function StepIndicator({ currentStep, totalSteps }: StepIndicatorProps): JSX.Element {
+export function StepIndicator({ currentStep, totalSteps }: StepIndicatorProps) {
   const steps = Array.from({ length: totalSteps }, (_, index) => index + 1);
 
   return (

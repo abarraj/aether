@@ -48,37 +48,25 @@ export async function POST(request: Request) {
     const industry = org?.industry ?? null;
 
     const dataContext = await buildDataContext(profile.org_id);
-    const system = buildSystemPrompt({
-      orgName,
-      industry,
-      dataContext,
-    });
+    const system = buildSystemPrompt({ orgName, industry, dataContext });
 
-    const userMessages = body.messages.filter((message) => message.role === 'user');
+    const userMessages = body.messages.filter((m: ChatMessage) => m.role === 'user');
     const lastUserMessage = userMessages[userMessages.length - 1];
-
-    const conversationTitle =
-      lastUserMessage?.content.slice(0, 80) || 'Aether AI COO conversation';
+    const conversationTitle = lastUserMessage?.content.slice(0, 80) || 'Aether AI COO conversation';
 
     let conversationId = body.conversationId ?? null;
 
     if (!conversationId) {
-      const { data: createdConversation } = await supabase
+      const { data: created } = await supabase
         .from('ai_conversations')
-        .insert({
-          org_id: profile.org_id,
-          user_id: user.id,
-          title: conversationTitle,
-        })
+        .insert({ org_id: profile.org_id, user_id: user.id, title: conversationTitle })
         .select('id')
         .maybeSingle<{ id: string }>();
-
-      conversationId = createdConversation?.id ?? null;
+      conversationId = created?.id ?? null;
     }
 
     if (conversationId && lastUserMessage) {
       await supabase.from('ai_messages').insert({
-        org_id: profile.org_id,
         conversation_id: conversationId,
         role: 'user',
         content: lastUserMessage.content,
@@ -87,11 +75,9 @@ export async function POST(request: Request) {
     }
 
     if (lastUserMessage) {
-      const ipHeader =
-        (request.headers as Headers).get('x-forwarded-for') ??
-        (request.headers as Headers).get('x-real-ip');
+      const ipHeader = (request.headers as Headers).get('x-forwarded-for') ?? (request.headers as Headers).get('x-real-ip');
       const ipAddress = ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
-
+      const desc = 'AI query from ' + (profile.full_name ?? user.email ?? 'User');
       await logAuditEvent({
         orgId: profile.org_id,
         actorId: user.id,
@@ -99,38 +85,21 @@ export async function POST(request: Request) {
         action: 'ai.query',
         targetType: 'ai',
         targetId: conversationId ?? undefined,
-        description: `AI query from ${profile.full_name ?? user.email ?? 'User'}`,
-        metadata: {
-          question: lastUserMessage.content,
-        },
+        description: desc,
+        metadata: { question: lastUserMessage.content },
         ipAddress,
       });
     }
 
+    // @ts-ignore
     const result = await streamText({
-      model: anthropic('claude-3-5-sonnet-20241022'),
+      model: anthropic('claude-sonnet-4-5-20250929') as any,
       system,
-      messages: body.messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-      })),
+      messages: body.messages.map((m: ChatMessage) => ({ role: m.role, content: m.content })),
     });
 
-    return result.toDataStreamResponse({
-      async onFinal(final) {
-        if (!conversationId) return;
-        const text = final.text;
-        await supabase.from('ai_messages').insert({
-          org_id: profile.org_id,
-          conversation_id: conversationId,
-          role: 'assistant',
-          content: text,
-          metadata: {},
-        });
-      },
-    });
+    return result.toTextStreamResponse();
   } catch (error) {
     return new NextResponse('AI handler error', { status: 500 });
   }
 }
-

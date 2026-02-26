@@ -108,7 +108,7 @@ export async function extractEntities(
         .single();
 
       if (!error && created) {
-        entityId = created.id;
+        entityId = created.id as string;
         existingByName.set(key, entityId);
         entitiesCreated++;
       }

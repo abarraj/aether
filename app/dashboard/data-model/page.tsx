@@ -322,8 +322,8 @@ export default function DataModelPage() {
                         onClick={() => setSelectedTypeId(et.id)}
                         className="absolute rounded-2xl border bg-zinc-950/95 shadow-lg transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                         style={{
-                          left: pos.x - nodeWidth / 2,
-                          top: pos.y - nodeHeight / 2,
+                          left: pos.x - (nodeWidth ?? 200) / 2,
+                          top: pos.y - (nodeHeight ?? 72) / 2,
                           width: nodeWidth,
                           height: nodeHeight,
                           borderColor: isSelected ? '#10B981' : '#27272a',
