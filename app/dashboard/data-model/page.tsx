@@ -153,7 +153,7 @@ export default function DataModelPage() {
   const [createRelationshipOpen, setCreateRelationshipOpen] = useState(false);
   const [expandedTableRow, setExpandedTableRow] = useState<string | null>(null);
 
-  const selectedType = selectedTypeId ? entityTypes.find((et) => et.id === selectedTypeId) ?? null;
+  const selectedType = selectedTypeId ? (entityTypes.find((et) => et.id === selectedTypeId) ?? null) : null;
   const entitiesForType = selectedType
     ? entities.filter((e) => e.entity_type_id === selectedType.id)
     : [];
