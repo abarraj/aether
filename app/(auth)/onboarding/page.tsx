@@ -57,7 +57,7 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-export default function OnboardingPage(): JSX.Element {
+export default function OnboardingPage() {
   const router = useRouter();
   const supabase = createClient();
 
