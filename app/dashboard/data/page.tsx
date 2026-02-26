@@ -3,7 +3,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, FileSpreadsheet } from 'lucide-react';
+import { Database, FileSpreadsheet, Loader2, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
@@ -15,6 +16,7 @@ type UploadStatus = 'pending' | 'processing' | 'ready' | 'error';
 interface UploadRow {
   id: string;
   file_name: string;
+  file_path: string;
   data_type: string;
   row_count: number | null;
   status: UploadStatus;
@@ -28,6 +30,18 @@ export default function DataPage() {
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [isLoadingUploads, setIsLoadingUploads] = useState<boolean>(false);
   const [isDropzoneOpen, setIsDropzoneOpen] = useState<boolean>(false);
+  const [uploadToDelete, setUploadToDelete] = useState<UploadRow | null>(null);
+  const [confirmFilename, setConfirmFilename] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!uploadToDelete) return;
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isDeleting) handleCloseDeleteModal();
+    };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [uploadToDelete, isDeleting]);
 
   useEffect(() => {
     const fetchUploads = async () => {
@@ -37,7 +51,7 @@ export default function DataPage() {
 
       const { data, error } = await supabase
         .from('uploads')
-        .select('id, file_name, data_type, row_count, status, created_at')
+        .select('id, file_name, file_path, data_type, row_count, status, created_at')
         .eq('org_id', org.id)
         .order('created_at', { ascending: false });
 
@@ -60,7 +74,7 @@ export default function DataPage() {
 
     const { data, error } = await supabase
       .from('uploads')
-      .select('id, file_name, data_type, row_count, status, created_at')
+      .select('id, file_name, file_path, data_type, row_count, status, created_at')
       .eq('org_id', org.id)
       .order('created_at', { ascending: false });
 
@@ -69,6 +83,88 @@ export default function DataPage() {
     }
 
     setIsLoadingUploads(false);
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, upload: UploadRow) => {
+    e.stopPropagation();
+    setUploadToDelete(upload);
+    setConfirmFilename('');
+  };
+
+  const handleCloseDeleteModal = () => {
+    if (!isDeleting) {
+      setUploadToDelete(null);
+      setConfirmFilename('');
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!org || !uploadToDelete) return;
+    if (confirmFilename.trim() !== uploadToDelete.file_name) return;
+
+    const supabase = createClient();
+    const { id, file_name, file_path } = uploadToDelete;
+    setIsDeleting(true);
+
+    let storageFailed = false;
+    try {
+      await supabase.storage.from('uploads').remove([file_path]);
+    } catch {
+      storageFailed = true;
+    }
+
+    const { error: dataRowsError } = await supabase
+      .from('data_rows')
+      .delete()
+      .eq('upload_id', id)
+      .eq('org_id', org.id);
+    if (dataRowsError) {
+      setIsDeleting(false);
+      toast.error('Failed to delete data rows. Please try again.');
+      return;
+    }
+
+    const { error: entitiesError } = await supabase
+      .from('entities')
+      .delete()
+      .eq('source_upload_id', id);
+    if (entitiesError) {
+      setIsDeleting(false);
+      toast.error('Failed to delete linked entities. Please try again.');
+      return;
+    }
+
+    const { error: uploadsError } = await supabase
+      .from('uploads')
+      .delete()
+      .eq('id', id)
+      .eq('org_id', org.id);
+    if (uploadsError) {
+      setIsDeleting(false);
+      toast.error('Failed to remove data source. Please try again.');
+      return;
+    }
+
+    try {
+      await fetch('/api/audit/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'data.delete',
+          targetType: 'upload',
+          targetId: id,
+          description: `Deleted data source: ${file_name}`,
+        }),
+      });
+    } catch {
+      // non-blocking
+    }
+
+    toast.success('Data source deleted');
+    setUploadToDelete(null);
+    setConfirmFilename('');
+    setIsDeleting(false);
+    await refreshUploads();
   };
 
   const renderStatusBadge = (status: UploadStatus) => {
@@ -170,13 +266,14 @@ export default function DataPage() {
                   <th className="border-b border-zinc-900 px-4 py-3 text-xs font-medium text-slate-400">
                     Uploaded
                   </th>
+                  <th className="w-10 border-b border-zinc-900" aria-label="Delete" />
                 </tr>
               </thead>
               <tbody>
                 {uploads.map((upload) => (
                   <tr
                     key={upload.id}
-                    className="cursor-pointer border-b border-zinc-900 last:border-0 hover:bg-zinc-900/60"
+                    className="group cursor-pointer border-b border-zinc-900 last:border-0 hover:bg-zinc-900/60"
                     onClick={() => router.push(`/dashboard/data/${upload.id}`)}
                   >
                     <td className="px-4 py-3 text-xs font-medium text-slate-100">
@@ -192,10 +289,93 @@ export default function DataPage() {
                     <td className="px-4 py-3 text-xs text-slate-500">
                       {new Date(upload.created_at).toLocaleString()}
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      <span
+                        className="inline-flex opacity-0 transition-opacity group-hover:opacity-100"
+                        onClick={(e) => handleDeleteClick(e, upload)}
+                      >
+                        <button
+                          type="button"
+                          className="rounded p-1 text-slate-500 hover:text-rose-400"
+                          aria-label={`Delete ${upload.file_name}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {uploadToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={handleCloseDeleteModal}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-modal-title"
+        >
+          <div
+            className="max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10">
+                <Trash2 className="h-6 w-6 text-rose-400" />
+              </div>
+              <h2 id="delete-modal-title" className="text-lg font-semibold text-slate-100">
+                Delete {uploadToDelete.file_name}?
+              </h2>
+              <p className="mx-auto mt-2 max-w-sm text-sm text-slate-400">
+                This will permanently remove the file, all parsed data rows, and any KPI snapshots
+                generated from this source. This action cannot be undone.
+              </p>
+              <label className="mt-4 w-full text-left text-xs text-slate-500">
+                Type <span className="font-mono text-slate-400">{uploadToDelete.file_name}</span> to
+                confirm
+              </label>
+              <input
+                type="text"
+                value={confirmFilename}
+                onChange={(e) => setConfirmFilename(e.target.value)}
+                placeholder={uploadToDelete.file_name}
+                className="mt-1.5 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                disabled={isDeleting}
+                autoComplete="off"
+              />
+              <div className="mt-6 flex w-full gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-2xl border-zinc-700 px-5 py-2.5 text-sm text-slate-300 hover:bg-zinc-800"
+                  onClick={handleCloseDeleteModal}
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="rounded-2xl bg-rose-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-rose-600 disabled:pointer-events-none disabled:opacity-50"
+                  onClick={handleConfirmDelete}
+                  disabled={
+                    isDeleting || confirmFilename.trim() !== uploadToDelete.file_name
+                  }
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    'Permanently delete'
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

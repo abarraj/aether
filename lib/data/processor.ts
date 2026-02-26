@@ -77,6 +77,89 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     };
   };
 
+  const REVENUE_KEYS = ['revenue', 'amount', 'total', 'net', 'gross'];
+  const LABOR_COST_KEYS = ['cost', 'labor_cost', 'labour_cost'];
+  const LABOR_HOURS_KEYS = ['hours', 'labor_hours'];
+  const ATTENDANCE_KEYS = ['attendance', 'count', 'check_ins', 'headcount'];
+  const UTILIZATION_KEYS = ['utilization', 'occupancy'];
+
+  function getByKeys(map: Record<string, unknown>, keys: string[]): number | undefined {
+    for (const key of keys) {
+      const val = map[key];
+      if (val === undefined || val === null) continue;
+      const num = typeof val === 'number' ? val : Number(val);
+      if (!Number.isNaN(num) && num !== 0) return num;
+    }
+    return undefined;
+  }
+
+  function extractUniversal(record: Record<string, unknown>): SnapshotMetric {
+    const lower: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record)) {
+      lower[k.toLowerCase().trim()] = v;
+    }
+    const metrics: SnapshotMetric = {};
+    const rev = getByKeys(lower, REVENUE_KEYS);
+    if (rev !== undefined) metrics.revenue = rev;
+    const laborCost = getByKeys(lower, LABOR_COST_KEYS);
+    if (laborCost !== undefined) metrics.laborCost = laborCost;
+    const laborHours = getByKeys(lower, LABOR_HOURS_KEYS);
+    if (laborHours !== undefined) metrics.laborHours = laborHours;
+    const attendance = getByKeys(lower, ATTENDANCE_KEYS);
+    if (attendance !== undefined) metrics.attendance = attendance;
+    const utilization = getByKeys(lower, UTILIZATION_KEYS);
+    if (utilization !== undefined) metrics.utilization = utilization;
+    return metrics;
+  }
+
+  function extractByDataType(record: Record<string, unknown>, dataType: string): SnapshotMetric {
+    const metrics: SnapshotMetric = {};
+    if (dataType === 'revenue') {
+      const candidate =
+        record.revenue ??
+        record.amount ??
+        record.total ??
+        record.net ??
+        record.gross ??
+        record.Revenue ??
+        null;
+      const value = typeof candidate === 'number' ? candidate : Number(candidate);
+      if (!Number.isNaN(value) && value !== 0) metrics.revenue = value;
+    } else if (dataType === 'labor') {
+      const hoursCandidate = record.hours ?? record.labor_hours ?? record.Hours ?? null;
+      const hours = typeof hoursCandidate === 'number' ? hoursCandidate : Number(hoursCandidate);
+      const costCandidate = record.cost ?? record.labor_cost ?? record.Cost ?? null;
+      const cost = typeof costCandidate === 'number' ? costCandidate : Number(costCandidate);
+      if (!Number.isNaN(hours) && hours !== 0) metrics.laborHours = hours;
+      if (!Number.isNaN(cost) && cost !== 0) metrics.laborCost = cost;
+    } else if (dataType === 'attendance') {
+      const countCandidate =
+        record.attendance ??
+        record.count ??
+        record.check_ins ??
+        record.Attendance ??
+        null;
+      const count =
+        typeof countCandidate === 'number' ? countCandidate : Number(countCandidate || 1);
+      if (!Number.isNaN(count) && count !== 0) metrics.attendance = count;
+      const utilCandidate = record.utilization ?? record.Utilization ?? null;
+      const utilization =
+        typeof utilCandidate === 'number' ? utilCandidate : Number(utilCandidate);
+      if (!Number.isNaN(utilization) && utilization !== 0) metrics.utilization = utilization;
+    }
+    return metrics;
+  }
+
+  function hasAny(m: SnapshotMetric): boolean {
+    return (
+      m.revenue !== undefined ||
+      m.laborCost !== undefined ||
+      m.laborHours !== undefined ||
+      m.attendance !== undefined ||
+      m.utilization !== undefined
+    );
+  }
+
   for (const row of rows) {
     const baseDateKey = toDateKey(row.date);
     if (!baseDateKey) continue;
@@ -88,66 +171,12 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     const record = row.data as Record<string, unknown>;
     const dataType = upload.data_type.toLowerCase();
 
-    const metrics: SnapshotMetric = {};
-
-    if (dataType === 'revenue') {
-      const candidate =
-        record.revenue ??
-        record.amount ??
-        record.total ??
-        record.net ??
-        record.gross ??
-        record.Revenue ??
-        null;
-      const value = typeof candidate === 'number' ? candidate : Number(candidate);
-      if (!Number.isNaN(value) && value !== 0) {
-        metrics.revenue = value;
-      }
-    } else if (dataType === 'labor') {
-      const hoursCandidate = record.hours ?? record.labor_hours ?? record.Hours ?? null;
-      const hours = typeof hoursCandidate === 'number' ? hoursCandidate : Number(hoursCandidate);
-
-      const costCandidate = record.cost ?? record.labor_cost ?? record.Cost ?? null;
-      const cost = typeof costCandidate === 'number' ? costCandidate : Number(costCandidate);
-
-      if (!Number.isNaN(hours) && hours !== 0) {
-        metrics.laborHours = hours;
-      }
-
-      if (!Number.isNaN(cost) && cost !== 0) {
-        metrics.laborCost = cost;
-      }
-    } else if (dataType === 'attendance') {
-      const countCandidate =
-        record.attendance ??
-        record.count ??
-        record.check_ins ??
-        record.Attendance ??
-        null;
-      const count =
-        typeof countCandidate === 'number' ? countCandidate : Number(countCandidate || 1);
-
-      if (!Number.isNaN(count) && count !== 0) {
-        metrics.attendance = count;
-      }
-
-      const utilCandidate = record.utilization ?? record.Utilization ?? null;
-      const utilization =
-        typeof utilCandidate === 'number' ? utilCandidate : Number(utilCandidate);
-      if (!Number.isNaN(utilization) && utilization !== 0) {
-        metrics.utilization = utilization;
-      }
+    let metrics: SnapshotMetric = extractUniversal(record);
+    if (!hasAny(metrics)) {
+      metrics = extractByDataType(record, dataType);
     }
 
-    if (
-      metrics.revenue === undefined &&
-      metrics.laborCost === undefined &&
-      metrics.laborHours === undefined &&
-      metrics.attendance === undefined &&
-      metrics.utilization === undefined
-    ) {
-      continue;
-    }
+    if (!hasAny(metrics)) continue;
 
     accumulate(dailyMetrics, baseDateKey, metrics);
     accumulate(weeklyMetrics, weekKey, metrics);

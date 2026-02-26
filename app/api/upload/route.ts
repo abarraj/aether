@@ -8,6 +8,7 @@ import { parseCsv } from '@/lib/csv-parser';
 import { canAddDataSource } from '@/lib/billing/queries';
 import { logAuditEvent } from '@/lib/audit';
 import { extractEntities, type OntologyMapping } from '@/lib/data/ontology-extractor';
+import { processUploadData } from '@/lib/data/processor';
 
 type ProfileOrg = {
   org_id: string | null;
@@ -150,6 +151,8 @@ export async function POST(request: NextRequest) {
     if (updateError) {
       return NextResponse.json({ error: 'Failed to finalize upload.' }, { status: 500 });
     }
+
+    await processUploadData(orgId, uploadRecord.id);
 
     let ontologyResult: { entitiesCreated: number; relationshipsCreated: number } | undefined;
     if (ontology && rowCount > 0) {
