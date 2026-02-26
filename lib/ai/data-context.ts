@@ -1,0 +1,248 @@
+// Builds a concise operational data context block for Claude.
+
+import { subDays, formatISO } from 'date-fns';
+
+import { createClient } from '@/lib/supabase/server';
+
+type SnapshotRow = {
+  date: string;
+  period: string;
+  metrics: {
+    revenue?: number | null;
+    laborCost?: number | null;
+    utilization?: number | null;
+  };
+};
+
+type AlertRow = {
+  type: string;
+  severity: string;
+  title: string;
+  description: string | null;
+  created_at: string;
+};
+
+type EntityTypeRow = {
+  id: string;
+  name: string;
+  slug: string;
+  properties: { key: string; label: string; type: string }[];
+};
+
+type EntityRow = {
+  id: string;
+  entity_type_id: string;
+  name: string;
+  properties: Record<string, unknown>;
+};
+
+type RelRow = {
+  from_entity_id: string;
+  to_entity_id: string;
+  relationship_types: { name: string } | null;
+};
+
+function buildOntologyContext(
+  entityTypes: EntityTypeRow[],
+  entities: EntityRow[],
+  rels: RelRow[],
+  entityNameById: Map<string, string>,
+): string {
+  const lines: string[] = [];
+  lines.push('---');
+  lines.push('OPERATIONAL ONTOLOGY (Data model for this business)');
+  lines.push('');
+
+  if (entityTypes.length === 0) {
+    lines.push('No entity types defined yet.');
+    return lines.join('\n');
+  }
+
+  lines.push('Entity types and their properties:');
+  for (const et of entityTypes) {
+    const propList =
+      et.properties?.length > 0
+        ? et.properties.map((p) => `${p.key} (${p.type})`).join(', ')
+        : 'none';
+    lines.push(`- ${et.name}: ${propList}`);
+  }
+
+  lines.push('');
+  lines.push('Entities by type (name and key properties):');
+  for (const et of entityTypes) {
+    const ofType = entities.filter((e) => e.entity_type_id === et.id);
+    if (ofType.length === 0) {
+      lines.push(`- ${et.name}: (none)`);
+      continue;
+    }
+    const summaries = ofType.map((e) => {
+      const keys = e.properties && typeof e.properties === 'object' ? Object.keys(e.properties as object) : [];
+      const preview = keys.length > 0
+        ? ` — ${keys.slice(0, 3).map((k) => `${k}: ${(e.properties as Record<string, unknown>)[k]}`).join(', ')}${keys.length > 3 ? '…' : ''}`
+        : '';
+      return `${e.name}${preview}`;
+    });
+    lines.push(`- ${et.name}: ${summaries.join('; ')}`);
+  }
+
+  const relList = rels.filter((r) => r.relationship_types?.name && entityNameById.get(r.from_entity_id) && entityNameById.get(r.to_entity_id));
+  if (relList.length > 0) {
+    lines.push('');
+    lines.push('Relationships between entities:');
+    for (const r of relList) {
+      const fromName = entityNameById.get(r.from_entity_id) ?? r.from_entity_id;
+      const toName = entityNameById.get(r.to_entity_id) ?? r.to_entity_id;
+      lines.push(`- ${fromName} [${r.relationship_types!.name}] → ${toName}`);
+    }
+  }
+
+  lines.push('---');
+  return lines.join('\n');
+}
+
+export async function buildDataContext(orgId: string): Promise<string> {
+  const supabase = await createClient();
+
+  const end = new Date();
+  const start = subDays(end, 29);
+
+  const [
+    snapshotsResult,
+    alertsResult,
+    entityTypesResult,
+    entitiesResult,
+    relationshipsResult,
+  ] = await Promise.all([
+    supabase
+      .from('kpi_snapshots')
+      .select('date, period, metrics')
+      .eq('org_id', orgId)
+      .eq('period', 'daily')
+      .gte('date', formatISO(start, { representation: 'date' }))
+      .lte('date', formatISO(end, { representation: 'date' }))
+      .order('date', { ascending: true })
+      .returns<SnapshotRow[]>(),
+    supabase
+      .from('alerts')
+      .select('type, severity, title, description, created_at')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+      .limit(10)
+      .returns<AlertRow[]>(),
+    supabase
+      .from('entity_types')
+      .select('id, name, slug, properties')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: true })
+      .returns<EntityTypeRow[]>(),
+    supabase
+      .from('entities')
+      .select('id, entity_type_id, name, properties')
+      .eq('org_id', orgId)
+      .order('entity_type_id')
+      .returns<EntityRow[]>(),
+    supabase
+      .from('entity_relationships')
+      .select('from_entity_id, to_entity_id, relationship_types(name)')
+      .eq('org_id', orgId)
+      .returns<RelRow[]>(),
+  ]);
+
+  const snapshots = snapshotsResult.data ?? [];
+  const alerts = alertsResult.data ?? [];
+  const entityTypes = entityTypesResult.data ?? [];
+  const entities = entitiesResult.data ?? [];
+  const relationships = relationshipsResult.data ?? [];
+
+  const entityNameById = new Map<string, string>();
+  for (const e of entities) {
+    entityNameById.set(e.id, e.name);
+  }
+
+  const ontologyBlock = buildOntologyContext(
+    entityTypes,
+    entities,
+    relationships,
+    entityNameById,
+  );
+
+  if (!snapshots.length) {
+    return `No KPI snapshots are available yet for this organization in the last 30 days.\n\n${ontologyBlock}`;
+  }
+
+  let totalRevenue = 0;
+  let totalLaborCost = 0;
+  let totalUtilization = 0;
+  let utilizationCount = 0;
+
+  for (const snapshot of snapshots) {
+    totalRevenue += snapshot.metrics.revenue ?? 0;
+    totalLaborCost += snapshot.metrics.laborCost ?? 0;
+    if (snapshot.metrics.utilization != null) {
+      totalUtilization += snapshot.metrics.utilization;
+      utilizationCount += 1;
+    }
+  }
+
+  const avgDailyRevenue = snapshots.length > 0 ? totalRevenue / snapshots.length : 0;
+  const avgUtilization =
+    utilizationCount > 0 ? totalUtilization / utilizationCount : null;
+
+  const latest = snapshots[snapshots.length - 1];
+  const latestRevenue = latest.metrics.revenue ?? null;
+  const latestLaborCost = latest.metrics.laborCost ?? null;
+  const latestUtilization = latest.metrics.utilization ?? null;
+
+  const lines: string[] = [];
+
+  lines.push('KPI summary for the last 30 days:');
+  lines.push(
+    `- Total revenue: ${Math.round(totalRevenue)} (approximate, summed across daily snapshots).`,
+  );
+  lines.push(
+    `- Total labor cost: ${Math.round(
+      totalLaborCost,
+    )} (approximate, summed across daily snapshots).`,
+  );
+  lines.push(
+    `- Average daily revenue: ${Math.round(avgDailyRevenue)} based on ${
+      snapshots.length
+    } days.`,
+  );
+  if (avgUtilization != null) {
+    lines.push(
+      `- Average utilization: ${avgUtilization.toFixed(
+        1,
+      )}% across days where utilization was recorded.`,
+    );
+  }
+
+  lines.push('');
+  lines.push('Most recent daily KPI snapshot:');
+  lines.push(`- Date: ${latest.date}.`);
+  if (latestRevenue != null) {
+    lines.push(`- Revenue: ${Math.round(latestRevenue)}.`);
+  }
+  if (latestLaborCost != null) {
+    lines.push(`- Labor cost: ${Math.round(latestLaborCost)}.`);
+  }
+  if (latestUtilization != null) {
+    lines.push(`- Utilization: ${latestUtilization.toFixed(1)}%.`);
+  }
+
+  if (alerts && alerts.length > 0) {
+    lines.push('');
+    lines.push('Recent alerts and anomalies (most recent first):');
+    for (const alert of alerts) {
+      lines.push(
+        `- [${alert.severity}] ${alert.type} — ${alert.title} (created at ${alert.created_at}).`,
+      );
+    }
+  }
+
+  lines.push('');
+  lines.push(ontologyBlock);
+
+  return lines.join('\n');
+}
+

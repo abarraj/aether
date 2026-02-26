@@ -1,0 +1,373 @@
+'use client';
+
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+import { FileWarning } from 'lucide-react';
+import { format, subDays } from 'date-fns';
+
+import { useUser } from '@/hooks/use-user';
+import { useKpis } from '@/hooks/use-kpis';
+import { useRealtimeTable } from '@/hooks/use-realtime';
+import { toast } from 'sonner';
+import { AnimatedNumber } from '@/components/shared/animated-number';
+import type { DateRange, Period } from '@/lib/data/aggregator';
+
+type RangePreset = '7d' | '30d' | '90d';
+
+function getInitialRange(): { period: Period; preset: RangePreset; range: DateRange } {
+  const end = new Date();
+  const start = subDays(end, 6);
+  return {
+    period: 'daily',
+    preset: '7d',
+    range: {
+      start: format(start, 'yyyy-MM-dd'),
+      end: format(end, 'yyyy-MM-dd'),
+    },
+  };
+}
+
+export default function DashboardPage() {
+  const { profile, org } = useUser();
+
+  const initial = useMemo(getInitialRange, []);
+  const [period, setPeriod] = useState<Period>(initial.period);
+  const [preset, setPreset] = useState<RangePreset>(initial.preset);
+  const [range, setRange] = useState<DateRange>(initial.range);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const { kpis, isLoading } = useKpis(period, range, refreshKey);
+
+  const greetingName =
+    profile?.full_name?.split(' ')[0] ??
+    org?.name?.split(' ')[0] ??
+    'there';
+
+  const handlePresetChange = (nextPreset: RangePreset) => {
+    const end = new Date();
+    let days = 7;
+    if (nextPreset === '30d') days = 30;
+    if (nextPreset === '90d') days = 90;
+    const start = subDays(end, days - 1);
+
+    setPreset(nextPreset);
+    setPeriod('daily');
+    setRange({
+      start: format(start, 'yyyy-MM-dd'),
+      end: format(end, 'yyyy-MM-dd'),
+    });
+  };
+
+  const hasSeries = (kpis?.series?.length ?? 0) > 0;
+  const isEmpty = !isLoading && (!kpis || !hasSeries);
+
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const scheduleKpiRefresh = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      setRefreshKey((previous) => previous + 1);
+    }, 2000);
+  }, []);
+
+  useRealtimeTable(
+    'kpi_snapshots',
+    org ? { column: 'org_id', value: org.id } : undefined,
+    (payload) => {
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+        scheduleKpiRefresh();
+      }
+    },
+  );
+
+  useRealtimeTable(
+    'uploads',
+    org ? { column: 'org_id', value: org.id } : undefined,
+    (payload) => {
+      if (
+        (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') &&
+        (payload.new as { status?: string } | null)?.status === 'ready'
+      ) {
+        toast.success('New data processed — dashboard updated');
+      }
+    },
+  );
+
+  const formatCurrency = (value: number): string =>
+    new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: org?.currency ?? 'USD',
+      maximumFractionDigits: 0,
+    }).format(value);
+
+  const formatPercent = (value: number): string =>
+    `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+
+  const chartData =
+    kpis?.series.map((point) => ({
+      dateLabel: format(new Date(point.date), 'MMM d'),
+      revenue: point.revenue ?? 0,
+      labor: point.laborCost ?? 0,
+    })) ?? [];
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-4xl font-semibold tracking-tighter">
+            Good morning, {greetingName}
+          </h1>
+          <p className="mt-1 text-sm text-slate-400">
+            Here&apos;s what Aether sees across your operations for this period.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="inline-flex rounded-2xl border border-zinc-800 bg-zinc-950 p-1 text-xs text-slate-300">
+            {(['7d', '30d', '90d'] as RangePreset[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => handlePresetChange(option)}
+                className={`rounded-2xl px-3 py-1 ${
+                  preset === option ? 'bg-zinc-900 text-slate-100' : 'text-slate-400'
+                }`}
+              >
+                {option === '7d' && 'Last 7 days'}
+                {option === '30d' && 'Last 30 days'}
+                {option === '90d' && 'Last 90 days'}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-1.5 text-xs text-slate-200 hover:bg-zinc-900"
+            onClick={() => {
+              if (!kpis) return;
+              const rows = kpis.series.map((row) => ({
+                date: row.date,
+                revenue: row.revenue ?? '',
+                laborCost: row.laborCost ?? '',
+                utilization: row.utilization ?? '',
+              }));
+
+              const header = 'date,revenue,laborCost,utilization';
+              const csvLines = [
+                header,
+                ...rows.map(
+                  (row) =>
+                    `${row.date},${row.revenue},${row.laborCost},${row.utilization}`,
+                ),
+              ];
+              const blob = new Blob([csvLines.join('\n')], {
+                type: 'text/csv;charset=utf-8;',
+              });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = 'aether-kpis.csv';
+              link.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      {isEmpty ? (
+        <div className="mt-10 flex justify-center">
+          <div className="flex max-w-md flex-col items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
+              <FileWarning className="h-6 w-6 text-emerald-400" />
+            </div>
+            <h2 className="text-lg font-semibold tracking-tight">No KPIs yet</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Upload a CSV from your systems so Aether can compute revenue, labor, and utilization
+              metrics for your business.
+            </p>
+            <button
+              type="button"
+              className="mt-6 text-xs font-medium text-emerald-400 underline-offset-4 hover:text-emerald-300 hover:underline"
+              onClick={() => {
+                window.location.href = '/dashboard/data';
+              }}
+            >
+              Go to data sources
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
+              <div className="text-sm text-slate-400">Total Revenue</div>
+              <div className="mt-3 text-4xl font-semibold tracking-tighter">
+                {kpis ? (
+                  <AnimatedNumber
+                    value={kpis.revenue}
+                    prefix={
+                      new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: org?.currency ?? 'USD',
+                        maximumFractionDigits: 0,
+                      })
+                        .formatToParts(0)
+                        .find((part) => part.type === 'currency')?.value ?? '$'
+                    }
+                    options={{
+                      style: 'currency',
+                      currency: org?.currency ?? 'USD',
+                      maximumFractionDigits: 0,
+                    }}
+                  />
+                ) : (
+                  '—'
+                )}
+              </div>
+              <div className="mt-1 text-sm text-emerald-400">
+                {kpis?.changes.revenuePct != null
+                  ? `${formatPercent(kpis.changes.revenuePct)} vs previous period`
+                  : 'No prior period yet'}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
+              <div className="text-sm text-slate-400">Labor Cost</div>
+              <div className="mt-3 text-4xl font-semibold tracking-tighter">
+                {kpis ? (
+                  <AnimatedNumber
+                    value={kpis.laborCost}
+                    prefix={
+                      new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: org?.currency ?? 'USD',
+                        maximumFractionDigits: 0,
+                      })
+                        .formatToParts(0)
+                        .find((part) => part.type === 'currency')?.value ?? '$'
+                    }
+                    options={{
+                      style: 'currency',
+                      currency: org?.currency ?? 'USD',
+                      maximumFractionDigits: 0,
+                    }}
+                  />
+                ) : (
+                  '—'
+                )}
+              </div>
+              <div className="mt-1 text-sm text-emerald-400">
+                {kpis?.changes.laborCostPct != null
+                  ? `${formatPercent(kpis.changes.laborCostPct)} vs previous period`
+                  : 'No prior period yet'}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
+              <div className="text-sm text-slate-400">Avg Utilization</div>
+              <div className="mt-3 text-4xl font-semibold tracking-tighter">
+                {kpis ? (
+                  <AnimatedNumber
+                    value={kpis.utilization}
+                    suffix="%"
+                    options={{ maximumFractionDigits: 0 }}
+                  />
+                ) : (
+                  '—'
+                )}
+              </div>
+              <div className="mt-1 text-sm text-emerald-400">
+                {kpis?.changes.utilizationPct != null
+                  ? `${formatPercent(kpis.changes.utilizationPct)} vs previous period`
+                  : 'No prior period yet'}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
+              <div className="text-sm text-slate-400">Forecast Revenue</div>
+              <div className="mt-3 text-4xl font-semibold tracking-tighter">
+                {kpis?.forecast ? (
+                  <AnimatedNumber
+                    value={kpis.forecast}
+                    prefix={
+                      new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: org?.currency ?? 'USD',
+                        maximumFractionDigits: 0,
+                      })
+                        .formatToParts(0)
+                        .find((part) => part.type === 'currency')?.value ?? '$'
+                    }
+                    options={{
+                      style: 'currency',
+                      currency: org?.currency ?? 'USD',
+                      maximumFractionDigits: 0,
+                    }}
+                  />
+                ) : (
+                  '—'
+                )}
+              </div>
+              <div className="mt-1 text-sm text-slate-500">
+                Based on the current period&apos;s trend
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-8">
+            <div className="mb-6 flex items-center justify-between">
+              <div className="font-medium">Revenue &amp; Labor Trend</div>
+              <div className="text-xs text-slate-500">
+                {range.start} → {range.end}
+              </div>
+            </div>
+            <div className="h-96">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <CartesianGrid stroke="#27272A" strokeDasharray="3 3" />
+                  <XAxis dataKey="dateLabel" stroke="#52525B" />
+                  <YAxis stroke="#52525B" />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#18181B',
+                      border: 'none',
+                      borderRadius: 12,
+                    }}
+                  />
+                  <Area
+                    type="natural"
+                    dataKey="revenue"
+                    stackId="1"
+                    stroke="#10B981"
+                    fill="#10B981"
+                    fillOpacity={0.2}
+                  />
+                  <Area
+                    type="natural"
+                    dataKey="labor"
+                    stackId="2"
+                    stroke="#64748B"
+                    fill="#64748B"
+                    fillOpacity={0.2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
