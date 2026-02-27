@@ -42,6 +42,8 @@ type RelRow = {
   relationship_types: { name: string } | null;
 };
 
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
 function buildOntologyContext(
   entityTypes: EntityTypeRow[],
   entities: EntityRow[],
@@ -98,6 +100,91 @@ function buildOntologyContext(
 
   lines.push('---');
   return lines.join('\n');
+}
+
+async function buildRawDataContext(
+  orgId: string,
+  supabase: SupabaseClient,
+): Promise<string> {
+  const { data: rawRows } = await supabase
+    .from('data_rows')
+    .select('date, data, upload_id')
+    .eq('org_id', orgId)
+    .order('date', { ascending: false })
+    .limit(200);
+
+  if (!rawRows || rawRows.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [];
+  lines.push('---');
+  lines.push(
+    'RAW TRANSACTION DATA (most recent rows from uploaded spreadsheets)',
+  );
+  lines.push('Each row represents one record from the original data source.');
+  lines.push(
+    'Use this data to answer granular questions about individual transactions, people, locations, dates, and line items.',
+  );
+  lines.push('');
+
+  const allKeys = new Set<string>();
+  for (const row of rawRows) {
+    const data = row.data as Record<string, unknown>;
+    for (const key of Object.keys(data)) {
+      allKeys.add(key);
+    }
+  }
+  const headers = Array.from(allKeys);
+
+  const nonEmptyHeaders = headers.filter((h) =>
+    rawRows.some((row) => {
+      const data = row.data as Record<string, unknown>;
+      const v = data[h];
+      return v != null && String(v).trim() !== '';
+    }),
+  );
+
+  if (nonEmptyHeaders.length === 0) {
+    return '';
+  }
+
+  const truncate = (s: string) =>
+    s.length > 50 ? `${s.slice(0, 47)}...` : s;
+
+  lines.push(`Columns: ${nonEmptyHeaders.join(' | ')}`);
+  lines.push('');
+
+  const buildLinesForRows = (rows: typeof rawRows) => {
+    const out: string[] = [];
+    for (const row of rows) {
+      const data = row.data as Record<string, unknown>;
+      const date = row.date ?? '';
+      const values = nonEmptyHeaders.map((h) => {
+        const v = data[h];
+        return v != null ? truncate(String(v)) : '';
+      });
+      const prefix = date ? `${date} | ` : '';
+      out.push(`${prefix}${values.join(' | ')}`);
+    }
+    return out;
+  };
+
+  lines.push(...buildLinesForRows(rawRows));
+  lines.push('---');
+
+  let result = lines.join('\n');
+
+  if (result.length > 8000) {
+    const limitedRows = rawRows.slice(0, 100);
+    const headerLines = lines.slice(0, lines.indexOf('') + 1); // up to blank line after Columns
+    const rebuilt: string[] = [...headerLines];
+    rebuilt.push(...buildLinesForRows(limitedRows));
+    rebuilt.push('---');
+    result = rebuilt.join('\n');
+  }
+
+  return result;
 }
 
 export async function buildDataContext(orgId: string): Promise<string> {
@@ -166,8 +253,29 @@ export async function buildDataContext(orgId: string): Promise<string> {
     entityNameById,
   );
 
+  const { count: totalRowCount } = await supabase
+    .from('data_rows')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId);
+
+  const rawDataBlock = await buildRawDataContext(orgId, supabase);
+
   if (!snapshots.length) {
-    return `No KPI snapshots are available yet for this organization in the last 30 days.\n\n${ontologyBlock}`;
+    const lines: string[] = [];
+    lines.push(
+      'No KPI snapshots are available yet for this organization in the last 30 days.',
+    );
+    lines.push('');
+    lines.push(
+      `Total records in database: ${totalRowCount ?? 0} (showing most recent 200 in raw data section)`,
+    );
+    lines.push('');
+    lines.push(ontologyBlock);
+    if (rawDataBlock) {
+      lines.push('');
+      lines.push(rawDataBlock);
+    }
+    return lines.join('\n');
   }
 
   let totalRevenue = 0;
@@ -241,6 +349,18 @@ export async function buildDataContext(orgId: string): Promise<string> {
   }
   lines.push('');
   lines.push(ontologyBlock);
+
+  lines.push('');
+  lines.push(
+    `Total records in database: ${
+      totalRowCount ?? 0
+    } (showing most recent 200 in raw data section)`,
+  );
+
+  if (rawDataBlock) {
+    lines.push('');
+    lines.push(rawDataBlock);
+  }
 
   // Fetch industry benchmarks for AI context
   const { data: org } = await supabase
