@@ -17,6 +17,7 @@ import { format, subDays } from 'date-fns';
 import { useUser } from '@/hooks/use-user';
 import { useOrg } from '@/hooks/use-org';
 import { useKpis } from '@/hooks/use-kpis';
+import { useBenchmarks } from '@/hooks/use-benchmarks';
 import { useRealtimeTable } from '@/hooks/use-realtime';
 import { toast } from 'sonner';
 import { AnimatedNumber } from '@/components/shared/animated-number';
@@ -48,6 +49,7 @@ export default function DashboardPage() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const { kpis, isLoading } = useKpis(period, range, refreshKey, activeOrgIds);
+  const { benchmark } = useBenchmarks();
 
   const greetingName =
     profile?.full_name?.split(' ')[0] ??
@@ -266,6 +268,16 @@ export default function DashboardPage() {
                   ? `${formatPercent(kpis.changes.revenuePct)} from ${periodLabel}`
                   : 'No prior period yet'}
               </div>
+              {benchmark && benchmark.median_monthly_revenue > 0 && (
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Industry median:{' '}
+                  {new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: org?.currency ?? 'USD',
+                    maximumFractionDigits: 0,
+                  }).format(benchmark.median_monthly_revenue)}
+                </div>
+              )}
             </div>
 
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
@@ -298,6 +310,19 @@ export default function DashboardPage() {
                   ? `${formatPercent(kpis.changes.laborCostPct)} from ${periodLabel}`
                   : 'No prior period yet'}
               </div>
+              {benchmark && kpis && kpis.revenue > 0 && (
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Industry avg: {benchmark.median_staff_cost_pct.toFixed(0)}% of revenue
+                  {(() => {
+                    const userPct = (kpis.laborCost / kpis.revenue) * 100;
+                    const diff = userPct - benchmark.median_staff_cost_pct;
+                    if (Number.isNaN(userPct)) return '';
+                    if (Math.abs(diff) < 2) return ' · On track';
+                    if (diff > 0) return ` · ${diff.toFixed(0)}% above avg`;
+                    return ` · ${Math.abs(diff).toFixed(0)}% below avg`;
+                  })()}
+                </div>
+              )}
             </div>
 
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
@@ -326,6 +351,11 @@ export default function DashboardPage() {
                   ? `${formatPercent(kpis.changes.utilizationPct)} from ${periodLabel}`
                   : 'No prior period yet'}
               </div>
+              {benchmark && benchmark.median_capacity > 0 && (
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Industry avg: {benchmark.median_capacity.toFixed(0)}%
+                </div>
+              )}
             </div>
 
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">

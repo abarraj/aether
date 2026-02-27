@@ -239,9 +239,63 @@ export async function buildDataContext(orgId: string): Promise<string> {
       );
     }
   }
-
   lines.push('');
   lines.push(ontologyBlock);
+
+  // Fetch industry benchmarks for AI context
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('industry')
+    .eq('id', orgId)
+    .maybeSingle();
+
+  if (org?.industry) {
+    const { data: benchmarkRow } = await supabase
+      .from('industry_benchmarks')
+      .select('metrics, sample_size')
+      .eq('industry', org.industry)
+      .eq('period', 'monthly')
+      .order('date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (benchmarkRow?.metrics) {
+      const bm = benchmarkRow.metrics as Record<string, number>;
+      lines.push('');
+      lines.push('---');
+      lines.push(
+        `INDUSTRY BENCHMARKS (${org.industry}, based on ${benchmarkRow.sample_size} businesses)`,
+      );
+      lines.push(
+        `- Median monthly revenue: ${Math.round(bm.median_monthly_revenue ?? 0)}`,
+      );
+      lines.push(
+        `- Revenue range (25th-75th percentile): ${Math.round(
+          bm.p25_monthly_revenue ?? 0,
+        )} - ${Math.round(bm.p75_monthly_revenue ?? 0)}`,
+      );
+      lines.push(
+        `- Median staff cost as % of revenue: ${(bm.median_staff_cost_pct ?? 0).toFixed(
+          1,
+        )}%`,
+      );
+      lines.push(
+        `- Staff cost range (25th-75th): ${(bm.p25_staff_cost_pct ?? 0).toFixed(
+          1,
+        )}% - ${(bm.p75_staff_cost_pct ?? 0).toFixed(1)}%`,
+      );
+      lines.push(
+        `- Median daily revenue: ${Math.round(bm.median_daily_revenue ?? 0)}`,
+      );
+      lines.push(
+        `- Median capacity/utilization: ${(bm.median_capacity ?? 0).toFixed(1)}%`,
+      );
+      lines.push(
+        "Use these benchmarks to contextualize this business's performance relative to similar businesses in the same industry.",
+      );
+      lines.push('---');
+    }
+  }
 
   return lines.join('\n');
 }
