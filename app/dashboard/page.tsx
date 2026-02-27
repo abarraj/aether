@@ -142,7 +142,8 @@ export default function DashboardPage() {
     })) ?? [];
 
   return (
-    <div className="space-y-8">
+    <div className="relative space-y-8">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-emerald-500/[0.02] to-transparent" />
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-4xl font-semibold tracking-tighter">
@@ -246,7 +247,7 @@ export default function DashboardPage() {
             </p>
             <button
               type="button"
-              className="mt-6 rounded-3xl bg-emerald-500 px-6 py-3 text-sm font-medium text-slate-950 hover:bg-emerald-600 transition"
+              className="mt-6 rounded-3xl bg-emerald-500 px-6 py-3 text-sm font-medium text-slate-950 hover:bg-emerald-600 transition shadow-[0_0_20px_rgba(16,185,129,0.15)]"
               onClick={() => {
                 window.location.href = '/dashboard/data';
               }}
@@ -284,10 +285,22 @@ export default function DashboardPage() {
                   '—'
                 )}
               </div>
-              <div className="mt-1 text-sm text-emerald-400">
-                {kpis?.changes.revenuePct != null
-                  ? `${formatPercent(kpis.changes.revenuePct)} from ${periodLabel}`
-                  : 'No prior period yet'}
+              <div className="mt-1 text-sm">
+                {kpis?.changes.revenuePct != null ? (
+                  <span
+                    className={
+                      kpis.changes.revenuePct > 0
+                        ? 'text-emerald-400'
+                        : kpis.changes.revenuePct < 0
+                          ? 'text-rose-400'
+                          : 'text-slate-500'
+                    }
+                  >
+                    {formatPercent(kpis.changes.revenuePct)} from {periodLabel}
+                  </span>
+                ) : (
+                  <span className="text-slate-500">No prior period yet</span>
+                )}
               </div>
               {benchmark && benchmark.median_monthly_revenue > 0 && (
                 <div className="mt-1 text-[11px] text-slate-500">
@@ -326,10 +339,22 @@ export default function DashboardPage() {
                   '—'
                 )}
               </div>
-              <div className="mt-1 text-sm text-emerald-400">
-                {kpis?.changes.laborCostPct != null
-                  ? `${formatPercent(kpis.changes.laborCostPct)} from ${periodLabel}`
-                  : 'No prior period yet'}
+              <div className="mt-1 text-sm">
+                {kpis?.changes.laborCostPct != null ? (
+                  <span
+                    className={
+                      kpis.changes.laborCostPct > 0
+                        ? 'text-rose-400'
+                        : kpis.changes.laborCostPct < 0
+                          ? 'text-emerald-400'
+                          : 'text-slate-500'
+                    }
+                  >
+                    {formatPercent(kpis.changes.laborCostPct)} from {periodLabel}
+                  </span>
+                ) : (
+                  <span className="text-slate-500">No prior period yet</span>
+                )}
               </div>
               {benchmark && kpis && kpis.revenue > 0 && (
                 <div className="mt-1 text-[11px] text-slate-500">
@@ -367,10 +392,22 @@ export default function DashboardPage() {
                   '—'
                 )}
               </div>
-              <div className="mt-1 text-sm text-emerald-400">
-                {kpis?.changes.utilizationPct != null
-                  ? `${formatPercent(kpis.changes.utilizationPct)} from ${periodLabel}`
-                  : 'No prior period yet'}
+              <div className="mt-1 text-sm">
+                {kpis?.changes.utilizationPct != null ? (
+                  <span
+                    className={
+                      kpis.changes.utilizationPct > 0
+                        ? 'text-emerald-400'
+                        : kpis.changes.utilizationPct < 0
+                          ? 'text-rose-400'
+                          : 'text-slate-500'
+                    }
+                  >
+                    {formatPercent(kpis.changes.utilizationPct)} from {periodLabel}
+                  </span>
+                ) : (
+                  <span className="text-slate-500">No prior period yet</span>
+                )}
               </div>
               {benchmark && benchmark.median_capacity > 0 && (
                 <div className="mt-1 text-[11px] text-slate-500">
@@ -419,16 +456,27 @@ export default function DashboardPage() {
             </div>
             <div className="h-96">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
+                <AreaChart
+                  data={chartData}
+                  margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+                >
                   <CartesianGrid stroke="#27272A" strokeDasharray="3 3" />
-                  <XAxis dataKey="dateLabel" stroke="#52525B" />
-                  <YAxis stroke="#52525B" />
+                  <XAxis
+                    dataKey="dateLabel"
+                    stroke="#52525B"
+                    tick={{ fontSize: 11 }}
+                  />
+                  <YAxis stroke="#52525B" tick={{ fontSize: 11 }} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: '#18181B',
-                      border: 'none',
-                      borderRadius: 12,
+                      border: '1px solid #27272A',
+                      borderRadius: 16,
+                      color: '#e2e8f0',
+                      fontSize: 12,
+                      boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
                     }}
+                    labelStyle={{ color: '#94a3b8', marginBottom: 4 }}
                   />
                   <Area
                     type="natural"

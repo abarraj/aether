@@ -147,8 +147,11 @@ export default function AlertsPage() {
   };
 
   const iconForSeverity = (severity: string) => {
-    if (severity === 'critical' || severity === 'warning') {
-      return <AlertTriangle className="h-4 w-4 text-emerald-400" />;
+    if (severity === 'critical') {
+      return <AlertTriangle className="h-4 w-4 text-rose-400" />;
+    }
+    if (severity === 'warning') {
+      return <AlertTriangle className="h-4 w-4 text-amber-400" />;
     }
     return <Info className="h-4 w-4 text-emerald-400" />;
   };
@@ -222,6 +225,12 @@ export default function AlertsPage() {
                   alert.is_read
                     ? 'border-zinc-800 bg-zinc-950'
                     : 'border-emerald-500/40 bg-zinc-950'
+                } ${
+                  alert.severity === 'critical'
+                    ? 'border-l-2 border-l-rose-500/50'
+                    : alert.severity === 'warning'
+                      ? 'border-l-2 border-l-amber-500/50'
+                      : 'border-l-2 border-l-emerald-500/50'
                 }`}
                 onClick={() => {
                   void handleMarkRead(alert);

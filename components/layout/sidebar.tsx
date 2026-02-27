@@ -165,9 +165,9 @@ export function Sidebar({
               <Link
                 key={item.label}
                 href={item.href}
-                className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-2xl border border-transparent transition-all duration-200 group ${
                   isActive
-                    ? 'bg-emerald-500/10 text-emerald-400'
+                    ? 'bg-emerald-500/10 text-emerald-400 border-l-2 border-emerald-400 -ml-[2px]'
                     : 'text-slate-400 hover:text-white hover:bg-zinc-900'
                 }`}
               >
@@ -190,7 +190,14 @@ export function Sidebar({
           onClick={onSignOut}
           className="flex w-full items-center gap-3 px-3 py-2 rounded-2xl hover:bg-zinc-900 cursor-pointer"
         >
-          <div className="w-9 h-9 bg-zinc-700 rounded-full" />
+          <div className="w-9 h-9 bg-zinc-700 rounded-full flex items-center justify-center text-[11px] font-medium text-slate-300">
+            {userName
+              .split(' ')
+              .filter(Boolean)
+              .slice(0, 2)
+              .map((segment) => segment[0]?.toUpperCase() ?? '')
+              .join('')}
+          </div>
           <div className="flex-1 min-w-0 text-left">
             <div className="text-sm font-medium truncate">{userName}</div>
             <div className="text-xs text-slate-500 truncate">{userRole}</div>

@@ -86,7 +86,7 @@ export default function AIAssistantPage() {
                 key={prompt}
                 type="button"
                 onClick={() => handleSuggestedClick(prompt)}
-                className="w-full rounded-3xl border border-zinc-800 px-6 py-5 text-left text-sm leading-snug text-slate-300 transition-all hover:border-emerald-500/30 hover:bg-zinc-900"
+                className="w-full rounded-3xl border border-zinc-800 px-6 py-5 text-left text-sm leading-snug text-slate-300 transition-all duration-200 hover:border-emerald-500/30 hover:bg-zinc-900/50"
               >
                 {prompt}
               </button>
@@ -119,10 +119,10 @@ export default function AIAssistantPage() {
                 }`}
               >
                 <div
-                  className={`max-w-[75%] rounded-3xl px-6 py-4 ${
+                  className={`max-w-[75%] rounded-2xl px-6 py-4 ${
                     message.role === 'user'
-                      ? 'bg-emerald-500 text-black'
-                      : 'border border-zinc-800 bg-zinc-900 text-slate-200'
+                      ? 'bg-emerald-500/5 border border-emerald-500/10 text-emerald-100'
+                      : 'border border-zinc-800 bg-zinc-900/50 text-slate-200'
                   }`}
                 >
                   {(message as unknown as { content?: string }).content ?? ''}
@@ -163,7 +163,7 @@ export default function AIAssistantPage() {
                     ? 'Ask me anything...'
                     : 'Connect your data first to chat...'
                 }
-                className="flex-1 rounded-3xl border border-zinc-800 bg-zinc-950 px-7 py-6 text-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+                className="flex-1 rounded-3xl border border-zinc-800 bg-zinc-950 px-7 py-6 text-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/30"
                 disabled={isLoading}
               />
               <button

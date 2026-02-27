@@ -26,6 +26,7 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: To
   const { org } = useUser();
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [secondsAgo, setSecondsAgo] = useState<number | null>(null);
+  const [offlineDuration, setOfflineDuration] = useState(0);
   const router = useRouter();
 
   const planLabel = plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : 'Starter';
@@ -60,13 +61,28 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: To
     const id = window.setInterval(update, 10_000);
     return () => window.clearInterval(id);
   }, [lastUpdatedAt]);
+  useEffect(() => {
+    if (realtimeStatus === 'connected') {
+      setOfflineDuration(0);
+      return;
+    }
+    const id = window.setInterval(() => {
+      setOfflineDuration((d) => d + 1);
+    }, 1000);
+    return () => {
+      clearInterval(id);
+      setOfflineDuration(0);
+    };
+  }, [realtimeStatus]);
 
   const liveLabel =
     realtimeStatus === 'connected'
       ? 'Live'
       : realtimeStatus === 'connecting'
         ? 'Connecting…'
-        : 'Offline';
+        : offlineDuration < 10
+          ? 'Reconnecting…'
+          : 'Offline';
 
   const liveDotClass =
     realtimeStatus === 'connected'

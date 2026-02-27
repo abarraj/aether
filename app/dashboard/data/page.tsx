@@ -172,24 +172,32 @@ export default function DataPage() {
   const renderStatusBadge = (status: UploadStatus) => {
     if (status === 'ready') {
       return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
+        <span className="inline-flex items-center gap-1.5 rounded-full border bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400 border-emerald-500/30">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
           Connected
         </span>
       );
     }
 
-    if (status === 'processing' || status === 'pending') {
+    if (status === 'processing') {
       return (
-        <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-300">
+        <span className="inline-flex items-center rounded-full border bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-400 border-amber-500/30">
           <span className="mr-1 h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
           Processing
         </span>
       );
     }
 
+    if (status === 'pending') {
+      return (
+        <span className="inline-flex items-center rounded-full border bg-zinc-800 px-2.5 py-0.5 text-[11px] font-medium text-slate-400 border-zinc-700">
+          Pending
+        </span>
+      );
+    }
+
     return (
-      <span className="inline-flex items-center rounded-full bg-rose-500/10 px-2.5 py-0.5 text-[11px] font-medium text-rose-300">
+      <span className="inline-flex items-center rounded-full border bg-rose-500/10 px-2.5 py-0.5 text-[11px] font-medium text-rose-400 border-rose-500/30">
         Error
       </span>
     );
@@ -208,7 +216,7 @@ export default function DataPage() {
         </div>
         <Button
           type="button"
-          className="rounded-2xl bg-emerald-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-600 active:scale-[0.985]"
+          className="rounded-2xl bg-emerald-500 px-5 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-600 active:scale-[0.985] shadow-[0_0_20px_rgba(16,185,129,0.15)]"
           onClick={() => setAddDataModalOpen(true)}
         >
           <Plus className="mr-2 h-4 w-4" />
@@ -285,7 +293,7 @@ export default function DataPage() {
                 {uploads.map((upload) => (
                   <tr
                     key={upload.id}
-                    className="group cursor-pointer border-b border-zinc-900 last:border-0 hover:bg-zinc-900/60"
+                    className="group cursor-pointer border-b border-zinc-900 last:border-0 hover:bg-zinc-900/50 transition-colors"
                     onClick={() => router.push(`/dashboard/data/${upload.id}`)}
                   >
                     <td className="px-4 py-3 text-slate-400">
