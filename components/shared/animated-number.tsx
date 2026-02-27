@@ -57,9 +57,11 @@ export function AnimatedNumber({
   const formatter = new Intl.NumberFormat(locale, options);
   const formatted = formatter.format(displayValue || 0);
 
+  const showPrefix = options?.style === 'currency' ? '' : prefix;
+
   return (
     <span>
-      {prefix}
+      {showPrefix}
       {formatted}
       {suffix}
     </span>

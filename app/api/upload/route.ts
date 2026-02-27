@@ -159,8 +159,8 @@ export async function POST(request: NextRequest) {
     const ipHeader = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
     const ipAddress = ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
 
-    // Fire-and-forget: auto-detect ontology from upload data (do not block response)
-    void (async () => {
+    // Auto-detect ontology from upload data
+    try {
       try {
         const sb = await createClient();
         const { data: dataRows } = await sb
@@ -203,7 +203,9 @@ export async function POST(request: NextRequest) {
       } catch (_err) {
         // Do not fail upload; log in audit or server logs if needed
       }
-    })();
+    } catch (detectionError) {
+      console.error("Ontology detection failed:", detectionError);
+    }
 
     let ontologyResult: { entitiesCreated: number; relationshipsCreated: number } | undefined;
     if (ontology && rowCount > 0) {
