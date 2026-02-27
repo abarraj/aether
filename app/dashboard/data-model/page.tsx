@@ -417,7 +417,7 @@ export default function DataModelPage() {
           {Array.from({ length: 3 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-3xl border border-zinc-800 bg-zinc-950 overflow-hidden animate-pulse"
+              className="rounded-2xl border border-zinc-800 bg-zinc-950 overflow-hidden animate-pulse"
             >
               <div className="px-6 pt-5 pb-3 flex items-center gap-3 border-b border-zinc-800/60">
                 <div className="h-10 w-10 rounded-2xl bg-zinc-800" />
@@ -538,7 +538,7 @@ export default function DataModelPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, ease: 'easeOut' }}
             >
-              <div className="flex flex-col items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-16 text-center">
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 px-10 py-16 text-center">
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 p-3">
                   <Network className="h-12 w-12 text-emerald-400" />
                 </div>
@@ -605,7 +605,7 @@ export default function DataModelPage() {
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.4, delay: index * 0.1, ease: 'easeOut' }}
-                      className="rounded-3xl border border-zinc-800 bg-zinc-950 p-0 overflow-hidden transition-all duration-300 hover:border-zinc-700"
+                      className="rounded-2xl border border-zinc-800 bg-zinc-950 p-0 overflow-hidden transition-all duration-300 hover:border-zinc-700"
                     >
                       <div className="px-6 pt-5 pb-3 flex items-center gap-3 border-b border-zinc-800/60">
                         <div
@@ -789,7 +789,7 @@ export default function DataModelPage() {
       )}
 
       {activeTab === 'graph' && (
-        <div className="flex gap-0 overflow-hidden rounded-3xl border border-zinc-800 bg-[#0A0A0A] shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+        <div className="flex gap-0 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0A0A0A] shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
           <div
             className="relative flex-1 overflow-auto"
             style={{
@@ -953,7 +953,7 @@ export default function DataModelPage() {
       )}
 
       {activeTab === 'table' && (
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-950 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] overflow-hidden">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
@@ -1068,7 +1068,7 @@ export default function DataModelPage() {
           aria-modal="true"
         >
           <div
-            className="max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+            className="max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col items-center text-center">
@@ -1696,7 +1696,7 @@ function CreateEntityTypeModal({ onClose, onCreate }: CreateEntityTypeModalProps
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70" onClick={onClose} aria-hidden />
-      <div className="relative w-full max-w-lg rounded-3xl border border-zinc-800 bg-zinc-950 shadow-xl">
+      <div className="relative w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 shadow-xl">
         <div className="border-b border-zinc-800 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-100">Create Entity Type</h2>
           <p className="mt-1 text-xs text-slate-400">Define a new type in your data model.</p>
@@ -1876,7 +1876,7 @@ function CreateRelationshipModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70" onClick={onClose} aria-hidden />
-      <div className="relative w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 shadow-xl">
+      <div className="relative w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 shadow-xl">
         <div className="border-b border-zinc-800 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-100">Create Relationship</h2>
           <p className="mt-1 text-xs text-slate-400">Connect two categories.</p>

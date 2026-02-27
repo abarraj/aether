@@ -296,7 +296,7 @@ export default function DataManagementSettingsPage() {
   return (
     <>
       <div className="space-y-8">
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
           <h1 className="text-2xl font-semibold tracking-tighter">Data Management</h1>
           <p className="mt-1 text-sm text-slate-400">
             Control and audit all data within your organization.
@@ -312,7 +312,7 @@ export default function DataManagementSettingsPage() {
             {storageCards.map((card) => (
               <div
                 key={card.label}
-                className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]"
+                className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]"
               >
                 <div className="text-xs text-slate-400">{card.label}</div>
                 <div className="mt-2 text-xl font-semibold tracking-tight text-slate-100">
@@ -328,7 +328,7 @@ export default function DataManagementSettingsPage() {
           <div className="text-[11px] font-semibold uppercase tracking-[2px] text-emerald-400">
             Connected data
           </div>
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-4 text-xs">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-4 text-xs">
             {isLoading ? (
               <div className="py-6 text-center text-slate-500">Loading data sources…</div>
             ) : sources.length === 0 ? (
@@ -429,7 +429,7 @@ export default function DataManagementSettingsPage() {
           <div className="text-[11px] font-semibold uppercase tracking-[2px] text-emerald-400">
             Retention policy
           </div>
-          <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
+          <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
             <div className="flex flex-wrap items-center gap-3">
               <div className="space-y-1">
                 <div className="text-xs font-medium text-slate-200">Keep data for</div>
@@ -464,7 +464,7 @@ export default function DataManagementSettingsPage() {
             Export &amp; compliance
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-sm text-slate-200">
+            <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-sm text-slate-200">
               <div className="font-medium">Export all data</div>
               <p className="mt-1 text-xs text-slate-400">
                 Download a complete export of all your organization&apos;s data in CSV format.
@@ -478,7 +478,7 @@ export default function DataManagementSettingsPage() {
               </button>
             </div>
 
-            <div className="space-y-3 rounded-3xl border border-rose-500/20 bg-rose-500/5 px-6 py-5 text-sm text-slate-200">
+            <div className="space-y-3 rounded-2xl border border-rose-500/20 bg-rose-500/5 px-6 py-5 text-sm text-slate-200">
               <div className="font-medium text-rose-300">Delete organization data</div>
               <p className="mt-1 text-xs text-rose-100/80">
                 Permanently delete all data associated with your organization. This cannot be
@@ -522,9 +522,9 @@ export default function DataManagementSettingsPage() {
       </div>
 
       {/* Delete dataset modal */}
-      {deleteTarget && (
+        {deleteTarget && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] text-xs text-slate-200">
+          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] text-xs text-slate-200">
             <div className="mb-3">
               <div className="text-xs font-semibold uppercase tracking-[2px] text-rose-400">
                 Delete dataset

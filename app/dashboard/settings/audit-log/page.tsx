@@ -239,7 +239,7 @@ export default function AuditLogSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
         <div>
           <h1 className="text-2xl font-semibold tracking-tighter">Audit log</h1>
           <p className="mt-1 text-sm text-slate-400">
@@ -256,7 +256,7 @@ export default function AuditLogSettingsPage() {
         </button>
       </div>
 
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-xs text-slate-200">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-xs text-slate-200">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500" />
@@ -325,7 +325,7 @@ export default function AuditLogSettingsPage() {
         </div>
       </div>
 
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 text-xs">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 text-xs">
         {isLoading ? (
           <div className="px-6 py-8 text-center text-slate-500">Loading audit events…</div>
         ) : filteredEvents.length === 0 ? (

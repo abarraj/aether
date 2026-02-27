@@ -97,7 +97,7 @@ export default function AetherLanding() {
                 </span>
               </div>
 
-              <h1 className="text-5xl font-semibold tracking-tighter md:text-6xl lg:text-7xl">
+              <h1 className="text-5xl font-bold tracking-[-0.04em] md:text-6xl lg:text-7xl leading-[0.9]">
                 Your AI Chief
                 <br />
                 Operating Officer
@@ -117,12 +117,12 @@ export default function AetherLanding() {
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@multiunitbrand.com"
-                  className="w-full rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500/60"
+                  className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500/60"
                 />
                 <button
                   type="submit"
                   disabled={isSubmittingHero}
-                  className="flex items-center justify-center rounded-3xl bg-emerald-500 px-8 py-3 text-sm font-medium text-slate-950 transition-all hover:bg-emerald-600 active:scale-[0.985] disabled:bg-zinc-700"
+                  className="flex items-center justify-center rounded-2xl bg-emerald-500 px-8 py-3 text-sm font-medium text-slate-950 transition-all hover:bg-emerald-600 active:scale-[0.985] disabled:bg-zinc-700"
                 >
                   {isSubmittingHero ? 'Joining waitlist…' : 'Request early access'}
                 </button>
@@ -147,7 +147,7 @@ export default function AetherLanding() {
               className="relative w-full max-w-xl"
             >
               <div className="absolute -inset-12 -z-10 bg-gradient-to-tr from-emerald-500/10 via-transparent to-emerald-500/5 blur-3xl" />
-              <div className="rounded-3xl border border-zinc-800 bg-zinc-950/80 p-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
                 <div className="mb-4 flex items-center justify-between text-xs text-slate-400">
                   <span>Executive overview</span>
                   <span className="text-emerald-400">Live</span>
@@ -188,8 +188,8 @@ export default function AetherLanding() {
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-emerald-400" />
               <span>
-                Trusted by early operators in{' '}
-                <span className="text-slate-300">New York, London, and Dubai</span>.
+                Trusted by operators managing{' '}
+                <span className="text-slate-300">$200M+ in combined annual revenue</span>.
               </span>
             </div>
             <div className="hidden sm:flex items-center gap-4">
@@ -214,7 +214,7 @@ export default function AetherLanding() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-3">
-              <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] hover:border-emerald-500/30 transition-all">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] hover:border-emerald-500/30 transition-all">
                 <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10">
                   <Database className="h-4 w-4 text-emerald-400" />
                 </div>
@@ -224,7 +224,7 @@ export default function AetherLanding() {
                   engineering team required.
                 </p>
               </div>
-              <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] hover:border-emerald-500/30 transition-all">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] hover:border-emerald-500/30 transition-all">
                 <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10">
                   <LineChart className="h-4 w-4 text-emerald-400" />
                 </div>
@@ -234,7 +234,7 @@ export default function AetherLanding() {
                   working and what&apos;s drifting—per location, per concept.
                 </p>
               </div>
-              <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] hover:border-emerald-500/30 transition-all">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] hover:border-emerald-500/30 transition-all">
                 <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10">
                   <Brain className="h-4 w-4 text-emerald-400" />
                 </div>
@@ -280,14 +280,64 @@ export default function AetherLanding() {
               ].map((module) => (
                 <div
                   key={module.title}
-                  className="min-w-[260px] flex-1 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]"
+                  className="min-w-[260px] flex-1 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]"
                 >
                   <div className="mb-3 flex items-center gap-2 text-xs text-emerald-400">
                     <BarChart3 className="h-4 w-4" />
                     <span>{module.title}</span>
                   </div>
                   <p className="text-xs text-slate-300">{module.description}</p>
-                  <div className="mt-4 h-32 rounded-2xl border border-zinc-900 bg-gradient-to-br from-zinc-900 to-zinc-950" />
+                  {module.title === 'Real-time Dashboard' && (
+                    <div className="mt-4 flex items-end gap-1 h-32 rounded-2xl border border-zinc-900 bg-zinc-950 p-4">
+                      {[40, 65, 45, 80, 55, 70, 90, 60, 75, 85, 50, 95].map((h, i) => (
+                        <div
+                          // eslint-disable-next-line react/no-array-index-key
+                          key={i}
+                          className="flex-1 rounded-sm bg-emerald-500/20 flex flex-col justify-end"
+                          style={{ height: `${h}%` }}
+                        >
+                          <div className="w-full rounded-sm bg-emerald-500/60" style={{ height: '60%' }} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {module.title === 'AI Business Advisor' && (
+                    <div className="mt-4 h-32 rounded-2xl border border-zinc-900 bg-zinc-950 p-4 flex flex-col justify-end gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                          <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                        </div>
+                        <div className="h-2.5 w-3/4 rounded-full bg-zinc-800" />
+                      </div>
+                      <div className="ml-8 space-y-1.5">
+                        <div className="h-2 w-full rounded-full bg-zinc-800/60" />
+                        <div className="h-2 w-5/6 rounded-full bg-zinc-800/60" />
+                        <div className="h-2 w-2/3 rounded-full bg-zinc-800/60" />
+                      </div>
+                    </div>
+                  )}
+                  {module.title === 'Smart Alerts' && (
+                    <div className="mt-4 h-32 rounded-2xl border border-zinc-900 bg-zinc-950 p-4 space-y-2">
+                      {['critical', 'warning', 'info'].map((sev) => (
+                        <div
+                          key={sev}
+                          className="flex items-center gap-2 rounded-lg bg-zinc-900/50 px-3 py-2"
+                        >
+                          <div
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              sev === 'critical'
+                                ? 'bg-rose-400'
+                                : sev === 'warning'
+                                  ? 'bg-amber-400'
+                                  : 'bg-emerald-400'
+                            }`}
+                          />
+                          <div className="h-2 flex-1 rounded-full bg-zinc-800" />
+                          <div className="h-2 w-12 rounded-full bg-zinc-800/60" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -314,7 +364,11 @@ export default function AetherLanding() {
               {(['starter', 'growth', 'enterprise'] as Plan[]).map((plan) => (
                 <div
                   key={plan}
-                  className="flex flex-col rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-6 text-sm shadow-[0_0_0_1px_rgba(24,24,27,0.9)]"
+                  className={
+                    plan === 'growth'
+                      ? 'flex flex-col rounded-2xl border border-emerald-500/30 bg-gradient-to-b from-emerald-500/[0.03] to-zinc-950 px-6 py-6 text-sm shadow-[0_0_30px_rgba(16,185,129,0.06)] relative'
+                      : 'flex flex-col rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-6 text-sm shadow-[0_0_0_1px_rgba(24,24,27,0.9)]'
+                  }
                 >
                   <div className="mb-3 flex items-center justify-between">
                     <div>
@@ -359,7 +413,11 @@ export default function AetherLanding() {
                   </ul>
                   <button
                     type="button"
-                    className="mt-5 w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-2 text-xs font-medium text-slate-200 hover:border-emerald-500/40 hover:bg-zinc-900"
+                    className={
+                      plan === 'growth'
+                        ? 'mt-5 w-full rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-medium text-slate-950 hover:bg-emerald-600 transition-all'
+                        : 'mt-5 w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-2 text-xs font-medium text-slate-200 hover:border-emerald-500/40 hover:bg-zinc-900'
+                    }
                     onClick={(event) => handleSubmit(event as unknown as FormEvent, 'pricing')}
                   >
                     Request access
@@ -373,7 +431,7 @@ export default function AetherLanding() {
         {/* Final CTA */}
         <section className="border-t border-zinc-800 bg-[#0A0A0A] py-16">
           <div className="mx-auto max-w-4xl px-8">
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-8 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-8 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
               <h2 className="text-2xl font-semibold tracking-tighter">
                 Ready for an AI COO that actually understands your business?
               </h2>
@@ -390,12 +448,12 @@ export default function AetherLanding() {
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@multiunitbrand.com"
-                  className="w-full rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500/60"
+                  className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500/60"
                 />
                 <button
                   type="submit"
                   disabled={isSubmittingCta}
-                  className="flex w-full items-center justify-center rounded-3xl bg-emerald-500 px-8 py-3 text-sm font-medium text-slate-950 transition-all hover:bg-emerald-600 active:scale-[0.985] disabled:bg-zinc-700 sm:w-auto"
+                  className="flex w-full items-center justify-center rounded-2xl bg-emerald-500 px-8 py-3 text-sm font-medium text-slate-950 transition-all hover:bg-emerald-600 active:scale-[0.985] disabled:bg-zinc-700 sm:w-auto"
                 >
                   {isSubmittingCta ? 'Joining waitlist…' : 'Request early access'}
                 </button>
@@ -425,6 +483,10 @@ export default function AetherLanding() {
             <a href="#features" className="hover:text-slate-300">
               Product
             </a>
+            <span className="text-zinc-700">·</span>
+            <span className="text-slate-600">Privacy</span>
+            <span className="text-zinc-700">·</span>
+            <span className="text-slate-600">Terms</span>
           </div>
         </div>
       </footer>

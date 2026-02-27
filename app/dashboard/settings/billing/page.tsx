@@ -65,7 +65,7 @@ export default function BillingSettingsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tighter">Billing &amp; plan</h1>
@@ -81,7 +81,7 @@ export default function BillingSettingsPage() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <div className="space-y-6">
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5">
             <div className="mb-3 text-sm font-medium text-slate-200">
               Usage this month
             </div>
@@ -107,7 +107,7 @@ export default function BillingSettingsPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5">
             <div className="mb-3 text-sm font-medium text-slate-200">
               Upgrade your workspace
             </div>
@@ -124,7 +124,7 @@ export default function BillingSettingsPage() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5">
           <div className="mb-4 text-sm font-medium text-slate-200">
             Plan comparison
           </div>

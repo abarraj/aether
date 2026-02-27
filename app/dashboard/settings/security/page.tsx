@@ -99,7 +99,7 @@ export default function SecuritySettingsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
         <h1 className="text-2xl font-semibold tracking-tighter">Security</h1>
         <p className="mt-1 text-sm text-slate-400">
           Manage authentication, access controls, and security policies for your workspace.
@@ -113,7 +113,7 @@ export default function SecuritySettingsPage() {
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           {/* Sign-in methods */}
-          <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-sm text-slate-200">
+          <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-sm text-slate-200">
             <div className="flex items-center justify-between gap-3">
               <div className="font-medium">Sign-in methods</div>
               <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[11px] text-slate-400">
@@ -155,7 +155,7 @@ export default function SecuritySettingsPage() {
           </div>
 
           {/* SSO */}
-          <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-sm text-slate-200">
+          <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-sm text-slate-200">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Lock className="h-4 w-4 text-slate-400" />
@@ -221,7 +221,7 @@ export default function SecuritySettingsPage() {
         </div>
 
         {/* Role permissions */}
-        <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
+        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
           <div className="flex items-center justify-between gap-3">
             <div className="font-medium text-sm text-slate-200">Role permissions</div>
             <span className="text-[11px] text-slate-500">
@@ -277,7 +277,7 @@ export default function SecuritySettingsPage() {
         </div>
 
         {/* Session management */}
-        <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
+        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-medium text-slate-200">Session management</div>
@@ -334,7 +334,7 @@ export default function SecuritySettingsPage() {
 
         <div className="grid gap-4 md:grid-cols-3">
           {/* Password policy */}
-          <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
+          <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Shield className="h-3.5 w-3.5 text-slate-400" />
@@ -358,7 +358,7 @@ export default function SecuritySettingsPage() {
           </div>
 
           {/* 2FA */}
-          <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
+          <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-3.5 w-3.5 text-slate-400" />
@@ -383,7 +383,7 @@ export default function SecuritySettingsPage() {
           </div>
 
           {/* IP allowlist */}
-          <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
+          <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Lock className="h-3.5 w-3.5 text-slate-400" />

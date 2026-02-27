@@ -199,13 +199,13 @@ export default function NotificationsSettingsPage() {
   if (isLoading || !prefs) {
     return (
       <div className="space-y-8">
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
           <h1 className="text-2xl font-semibold tracking-tighter">Notifications</h1>
           <p className="mt-1 text-sm text-slate-400">
             Control how and when Aether communicates with you.
           </p>
         </div>
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-8 text-xs text-slate-500">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-8 text-xs text-slate-500">
           Loading notification preferences…
         </div>
       </div>
@@ -214,7 +214,7 @@ export default function NotificationsSettingsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
         <h1 className="text-2xl font-semibold tracking-tighter">Notifications</h1>
         <p className="mt-1 text-sm text-slate-400">
           Control how and when Aether communicates with you.
@@ -305,7 +305,7 @@ export default function NotificationsSettingsPage() {
         <div className="text-[11px] font-semibold uppercase tracking-[2px] text-emerald-400">
           Quiet hours
         </div>
-        <div className="space-y-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
+        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-xs text-slate-200">
           <p className="text-xs text-slate-400">
             Pause non-critical notifications during these hours. Critical alerts may still break
             through depending on your preferences.

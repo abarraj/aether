@@ -226,13 +226,13 @@ export default function DataPage() {
 
       {isLoadingUploads || isLoading ? (
         <div className="mt-12 flex items-center justify-center">
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-4 text-xs text-slate-400">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-4 text-xs text-slate-400">
             Loading your uploads…
           </div>
         </div>
       ) : !hasUploads ? (
         <div className="mt-16 flex justify-center">
-          <div className="flex max-w-2xl flex-col items-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+          <div className="flex max-w-2xl flex-col items-center rounded-2xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
             <h2 className="text-lg font-semibold tracking-tight">No data connected yet</h2>
             <p className="mt-2 text-sm text-slate-400">
               Connect your first spreadsheet and Aether will automatically detect your revenue,
@@ -242,7 +242,7 @@ export default function DataPage() {
               <button
                 type="button"
                 onClick={() => setIsDropzoneOpen(true)}
-                className="flex flex-col items-start rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
+                className="flex flex-col items-start rounded-2xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
               >
                 <FileSpreadsheet className="h-8 w-8 text-emerald-400 mb-3" />
                 <span className="font-medium text-slate-100">Upload a spreadsheet</span>
@@ -251,7 +251,7 @@ export default function DataPage() {
               <button
                 type="button"
                 onClick={() => setGoogleSheetsOpen(true)}
-                className="flex flex-col items-start rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
+                className="flex flex-col items-start rounded-2xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
               >
                 <Link2 className="h-8 w-8 text-emerald-400 mb-3" />
                 <span className="font-medium text-slate-100">Connect Google Sheets</span>
@@ -261,7 +261,7 @@ export default function DataPage() {
           </div>
         </div>
       ) : (
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-950/80 p-6">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6">
           <div className="mb-4 flex items-center justify-between">
             <p className="text-xs text-slate-400">
               {uploads.length} file{uploads.length === 1 ? '' : 's'} connected
@@ -340,7 +340,7 @@ export default function DataPage() {
           aria-labelledby="delete-modal-title"
         >
           <div
-            className="max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+            className="max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col items-center text-center">
@@ -409,7 +409,7 @@ export default function DataPage() {
           aria-modal="true"
         >
           <div
-            className="max-w-lg w-full rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+            className="max-w-lg w-full rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="grid grid-cols-2 gap-4">
@@ -419,7 +419,7 @@ export default function DataPage() {
                   setAddDataModalOpen(false);
                   setIsDropzoneOpen(true);
                 }}
-                className="flex flex-col items-start rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
+                className="flex flex-col items-start rounded-2xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
               >
                 <FileSpreadsheet className="h-8 w-8 text-emerald-400 mb-3" />
                 <span className="font-medium text-slate-100">Upload a spreadsheet</span>
@@ -431,7 +431,7 @@ export default function DataPage() {
                   setAddDataModalOpen(false);
                   setGoogleSheetsOpen(true);
                 }}
-                className="flex flex-col items-start rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
+                className="flex flex-col items-start rounded-2xl border border-zinc-800 bg-zinc-950 p-6 text-left transition-all hover:border-emerald-500/30 hover:bg-zinc-900 cursor-pointer"
               >
                 <Link2 className="h-8 w-8 text-emerald-400 mb-3" />
                 <span className="font-medium text-slate-100">Connect Google Sheets</span>
@@ -451,7 +451,7 @@ export default function DataPage() {
           aria-modal="true"
         >
           <div
-            className="max-w-md w-full rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+            className="max-w-md w-full rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-slate-100">Connect Google Sheets</h3>

@@ -158,14 +158,14 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
         <h1 className="text-2xl font-semibold tracking-tighter">Alerts</h1>
         <p className="mt-1 text-sm text-slate-400">
           Every anomaly, recommendation, and threshold breach in one calm stream.
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-4 text-xs">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-4 text-xs">
         <div className="flex items-center gap-2">
           <span className="text-slate-400">Type</span>
           <div className="inline-flex rounded-2xl border border-zinc-800 bg-zinc-950 p-1">
@@ -207,11 +207,11 @@ export default function AlertsPage() {
 
       <div className="space-y-3">
         {isLoading ? (
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-6 text-xs text-slate-500">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-6 text-xs text-slate-500">
             Loading alerts…
           </div>
         ) : filteredAlerts.length === 0 ? (
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-8 text-center text-xs text-slate-500">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-8 text-center text-xs text-slate-500">
             No alerts yet. Aether will surface recommendations and anomalies here as data flows
             through your workspace.
           </div>
@@ -219,9 +219,9 @@ export default function AlertsPage() {
           filteredAlerts.map((alert) => {
             const isExpanded = expandedId === alert.id;
             return (
-              <div
-                key={alert.id}
-                className={`cursor-pointer rounded-3xl border px-6 py-4 text-xs transition-all ${
+                <div
+                  key={alert.id}
+                  className={`cursor-pointer rounded-2xl border px-6 py-4 text-xs transition-all ${
                   alert.is_read
                     ? 'border-zinc-800 bg-zinc-950'
                     : 'border-emerald-500/40 bg-zinc-950'

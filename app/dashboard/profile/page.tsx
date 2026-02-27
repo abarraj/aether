@@ -112,7 +112,7 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-8">
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
         <h1 className="text-2xl font-semibold tracking-tighter">Profile</h1>
         <p className="mt-1 text-sm text-slate-400">
           Control how you appear across Aether.
@@ -122,7 +122,7 @@ export default function ProfilePage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)]">
         <form
           onSubmit={handleSubmit}
-          className="space-y-6 rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]"
+          className="space-y-6 rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]"
         >
           <div className="space-y-2">
             <label htmlFor="full-name" className="block text-sm font-medium text-slate-300">
@@ -150,7 +150,7 @@ export default function ProfilePage() {
           </div>
         </form>
 
-        <div className="space-y-4 rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+        <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
           <h2 className="text-sm font-semibold tracking-tight text-slate-200">
             Avatar
           </h2>

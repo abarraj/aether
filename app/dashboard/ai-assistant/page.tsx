@@ -86,7 +86,7 @@ export default function AIAssistantPage() {
                 key={prompt}
                 type="button"
                 onClick={() => handleSuggestedClick(prompt)}
-                className="w-full rounded-3xl border border-zinc-800 px-6 py-5 text-left text-sm leading-snug text-slate-300 transition-all duration-200 hover:border-emerald-500/30 hover:bg-zinc-900/50"
+                className="w-full rounded-2xl border border-zinc-800 px-6 py-5 text-left text-sm leading-snug text-slate-300 transition-all duration-200 hover:border-emerald-500/30 hover:bg-zinc-900/50"
               >
                 {prompt}
               </button>
@@ -132,7 +132,7 @@ export default function AIAssistantPage() {
 
             {isLoading && (
               <div className="flex justify-start">
-                <div className="flex items-center gap-3 rounded-3xl border border-zinc-800 bg-zinc-900 px-6 py-4 text-sm">
+                <div className="flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 px-6 py-4 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Thinking about your business…
                 </div>
@@ -163,13 +163,13 @@ export default function AIAssistantPage() {
                     ? 'Ask me anything...'
                     : 'Connect your data first to chat...'
                 }
-                className="flex-1 rounded-3xl border border-zinc-800 bg-zinc-950 px-7 py-6 text-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/30"
+                className="flex-1 rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-3.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/30"
                 disabled={isLoading}
               />
               <button
                 type="submit"
                 disabled={isLoading || !input?.trim()}
-                className="rounded-3xl bg-emerald-500 px-9 text-black transition-all hover:bg-emerald-600 active:scale-[0.985] disabled:bg-zinc-800"
+                className="rounded-2xl bg-emerald-500 px-6 py-3.5 text-black transition-all hover:bg-emerald-600 active:scale-[0.985] disabled:bg-zinc-800"
               >
                 <Send className="h-5 w-5" />
               </button>

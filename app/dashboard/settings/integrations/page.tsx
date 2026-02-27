@@ -394,7 +394,7 @@ export default function IntegrationsSettingsPage() {
     subtitle: string;
     meta: string;
   }) => (
-    <div className="flex items-center justify-between gap-4 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-4">
+    <div className="flex items-center justify-between gap-4 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-4">
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400">
           {props.icon}
@@ -424,7 +424,7 @@ export default function IntegrationsSettingsPage() {
     <>
       <div className="space-y-8">
         {/* Header */}
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
           <h1 className="text-2xl font-semibold tracking-tighter">Integrations</h1>
           <p className="mt-1 text-sm text-slate-400">
             Connect your tools to unify your operational intelligence.
@@ -438,11 +438,11 @@ export default function IntegrationsSettingsPage() {
           </div>
 
           {isLoading ? (
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-6 text-xs text-slate-500">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-6 text-xs text-slate-500">
               Scanning your workspace for connected sources…
             </div>
           ) : !hasActiveConnections ? (
-            <div className="rounded-3xl border border-dashed border-zinc-800 bg-zinc-950/70 px-6 py-8 text-xs text-slate-400">
+            <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/70 px-6 py-8 text-xs text-slate-400">
               <div className="mb-1 text-sm font-medium text-slate-200">No integrations connected</div>
               <p>
                 No connections yet. Upload a spreadsheet or connect a tool to start building your
@@ -497,12 +497,12 @@ export default function IntegrationsSettingsPage() {
                 }
               };
 
-              return (
-                <button
+                  return (
+                    <button
                   key={integration.id}
                   type={isInteractive ? 'button' : 'button'}
                   onClick={isInteractive ? handleClick : undefined}
-                  className={`flex flex-col items-start gap-3 rounded-3xl border px-6 py-5 text-left text-sm transition-all ${
+                  className={`flex flex-col items-start gap-3 rounded-2xl border px-6 py-5 text-left text-sm transition-all ${
                     isComingSoon
                       ? 'border-zinc-800 bg-zinc-950/80 text-slate-500 opacity-60 cursor-default'
                       : 'border-zinc-800 bg-zinc-950 text-slate-200 hover:border-emerald-500/30'
@@ -552,7 +552,7 @@ export default function IntegrationsSettingsPage() {
           <div className="text-[11px] font-semibold uppercase tracking-[2px] text-emerald-400">
             API access
           </div>
-          <div className="flex flex-col gap-3 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-sm text-slate-200 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5 text-sm text-slate-200 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="font-medium">Programmatic access</div>
               <p className="mt-1 text-xs text-slate-400">
@@ -604,7 +604,7 @@ export default function IntegrationsSettingsPage() {
             </button>
           </div>
 
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-4 text-xs">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-4 text-xs">
             {isApiKeysLoading ? (
               <div className="py-6 text-center text-slate-500">Loading API keys…</div>
             ) : apiKeys.length === 0 ? (
@@ -667,7 +667,7 @@ export default function IntegrationsSettingsPage() {
       {/* Google Sheets modal */}
       {isSheetsModalOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
             <div className="mb-4">
               <div className="text-xs font-semibold uppercase tracking-[2px] text-emerald-400">
                 Google Sheets
@@ -725,7 +725,7 @@ export default function IntegrationsSettingsPage() {
       {/* API key creation modal */}
       {isKeyModalOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
             {!createdKey ? (
               <>
                 <div className="mb-4">

@@ -137,7 +137,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
         <h1 className="text-2xl font-semibold tracking-tighter">Organization settings</h1>
         <p className="mt-1 text-sm text-slate-400">
           Keep your workspace details aligned with how you actually operate.
@@ -146,7 +146,7 @@ export default function SettingsPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] space-y-6"
+        className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] space-y-6"
       >
         <div className="grid gap-5 md:grid-cols-2">
           <div className="space-y-2">
@@ -223,7 +223,7 @@ export default function SettingsPage() {
         </div>
       </form>
 
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
         <div className="mb-3">
           <h2 className="text-sm font-semibold tracking-tight text-red-400">Danger zone</h2>
           <p className="mt-1 text-xs text-slate-500">
