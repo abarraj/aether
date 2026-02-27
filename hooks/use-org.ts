@@ -16,7 +16,7 @@ export function useOrg(): {
   isLoading: boolean;
 } {
   const { org: primaryOrg, isLoading: isUserLoading } = useUser();
-  const switcher = useOrgSwitcher();
+  const switcher = useOrgSwitcher(primaryOrg, isUserLoading);
 
   return {
     org: switcher.activeOrg ?? primaryOrg,

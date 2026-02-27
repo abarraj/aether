@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { createClient } from '@/lib/supabase/client';
-import { useUser, type Organization } from '@/hooks/use-user';
+import type { Organization } from '@/hooks/use-user';
 
 export type ViewMode = 'portfolio' | 'single';
 
@@ -21,8 +21,7 @@ interface OrgSwitcherState {
 const STORAGE_KEY = 'aether_active_org';
 const VIEW_MODE_KEY = 'aether_view_mode';
 
-export function useOrgSwitcher(): OrgSwitcherState {
-  const { org, isLoading: isUserLoading } = useUser();
+export function useOrgSwitcher(org: Organization | null, isUserLoading: boolean): OrgSwitcherState {
   const [childOrgs, setChildOrgs] = useState<Organization[]>([]);
   const [activeOrg, setActiveOrg] = useState<Organization | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('portfolio');
