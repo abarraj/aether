@@ -100,6 +100,6 @@ export async function POST(request: Request) {
 
     return result.toTextStreamResponse();
   } catch (error) {
-    return new NextResponse('AI handler error', { status: 500 });
+    console.error('CHAT_ERROR:', error); return new NextResponse(JSON.stringify({ error: String(error), stack: (error as Error)?.stack }), { status: 500 });
   }
 }
