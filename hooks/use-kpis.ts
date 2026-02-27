@@ -3,7 +3,6 @@
 
 import { useEffect, useState } from 'react';
 
-import { useOrg } from '@/hooks/use-org';
 import type { DateRange, KPIData, Period } from '@/lib/data/aggregator';
 import { getKPIs } from '@/lib/data/aggregator';
 
@@ -17,10 +16,8 @@ export function useKpis(
   period: Period,
   dateRange: DateRange,
   refreshKey = 0,
-  orgIds?: string[],
+  orgIds: string[] = [],
 ): UseKpisState {
-  const { org, isLoading: isOrgLoading } = useOrg();
-
   const [state, setState] = useState<UseKpisState>({
     kpis: null,
     isLoading: false,
@@ -31,14 +28,12 @@ export function useKpis(
     let cancelled = false;
 
     const run = async () => {
-      if (!org && (!orgIds || orgIds.length === 0)) return;
+      if (orgIds.length === 0) return;
 
       setState((previous) => ({ ...previous, isLoading: true, error: null }));
 
       try {
-        const idsToQuery = orgIds && orgIds.length > 0 ? orgIds : org ? [org.id] : [];
-        if (idsToQuery.length === 0) return;
-
+        const idsToQuery = orgIds;
         const results = await Promise.all(idsToQuery.map((id) => getKPIs(id, period, dateRange)));
         const data: KPIData = {
           revenue: results.reduce((sum, r) => sum + r.revenue, 0),
@@ -74,13 +69,14 @@ export function useKpis(
       }
     };
 
-    if (!isOrgLoading && (org || (orgIds && orgIds.length > 0))) {
+    if (orgIds.length > 0) {
       void run();
     }
+
     return () => {
       cancelled = true;
     };
-  }, [org, isOrgLoading, period, dateRange.start, dateRange.end, refreshKey, orgIds]);
+  }, [period, dateRange.start, dateRange.end, refreshKey, JSON.stringify(orgIds)]);
 
   return state;
 }

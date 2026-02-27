@@ -48,8 +48,10 @@ export default function DashboardPage() {
   const [range, setRange] = useState<DateRange>(initial.range);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const { kpis, isLoading } = useKpis(period, range, refreshKey, activeOrgIds);
-  const { benchmark } = useBenchmarks();
+  const effectiveOrgIds =
+    activeOrgIds.length > 0 ? activeOrgIds : org ? [org.id] : [];
+  const { kpis, isLoading } = useKpis(period, range, refreshKey, effectiveOrgIds);
+  const { benchmark } = useBenchmarks(org?.industry ?? null);
 
   const greetingName =
     profile?.full_name?.split(' ')[0] ??
