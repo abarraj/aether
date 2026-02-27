@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Area,
   AreaChart,
@@ -11,7 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { Sparkles, Info, LayoutGrid } from 'lucide-react';
+import { Sparkles, Info } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 
 import { useUser } from '@/hooks/use-user';
@@ -22,6 +23,7 @@ import { useRealtimeTable } from '@/hooks/use-realtime';
 import { toast } from 'sonner';
 import { AnimatedNumber } from '@/components/shared/animated-number';
 import type { DateRange, Period } from '@/lib/data/aggregator';
+import { cn } from '@/lib/utils';
 
 type RangePreset = '7d' | '30d' | '90d';
 
@@ -40,7 +42,7 @@ function getInitialRange(): { period: Period; preset: RangePreset; range: DateRa
 
 export default function DashboardPage() {
   const { profile } = useUser();
-  const { org, isGroup, viewMode, activeOrgIds, childOrgs } = useOrg();
+  const { org, activeOrgIds } = useOrg();
 
   const initial = useMemo(getInitialRange, []);
   const [period, setPeriod] = useState<Period>(initial.period);
@@ -128,9 +130,6 @@ export default function DashboardPage() {
       maximumFractionDigits: 0,
     }).format(value);
 
-  const formatPercent = (value: number): string =>
-    `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
-
   const periodLabel =
     preset === '7d' ? 'last week' : preset === '30d' ? 'last month' : 'last quarter';
 
@@ -141,37 +140,82 @@ export default function DashboardPage() {
       labor: point.laborCost ?? 0,
     })) ?? [];
 
+  const insight = useMemo(() => {
+    if (!kpis) return null;
+    const staffPct =
+      kpis.revenue > 0
+        ? ((kpis.laborCost / kpis.revenue) * 100).toFixed(0)
+        : null;
+    const revChange = kpis.changes.revenuePct;
+
+    if (revChange != null && revChange > 5) {
+      return `Revenue is up ${revChange.toFixed(0)}% — strong trajectory.`;
+    }
+    if (revChange != null && revChange < -5) {
+      return `Revenue dropped ${Math.abs(revChange).toFixed(0)}% — worth investigating.`;
+    }
+    if (staffPct && Number(staffPct) > 35) {
+      return `Staff costs at ${staffPct}% of revenue — above typical range.`;
+    }
+    if (kpis.utilization > 0 && kpis.utilization < 40) {
+      return `Capacity at ${kpis.utilization.toFixed(0)}% — significant room to grow.`;
+    }
+    return `Tracking ${kpis.series.length} days of operational data.`;
+  }, [kpis]);
+
+  const laborChange = kpis?.changes.laborCostPct ?? null;
+  const capacityChange = kpis?.changes.utilizationPct ?? null;
+
+  const renderKpiChange = (
+    change: number | null,
+    isPositiveGood: boolean,
+  ): React.ReactNode => {
+    if (change == null) return null;
+    const positive = change >= 0;
+    const className = isPositiveGood
+      ? positive
+        ? 'text-emerald-400'
+        : 'text-rose-400'
+      : positive
+        ? 'text-rose-400'
+        : 'text-emerald-400';
+    return (
+      <span className={cn('text-[11px] font-semibold', className)}>
+        {positive ? '+' : ''}
+        {change.toFixed(1)}%
+      </span>
+    );
+  };
+
   return (
-    <div className="relative space-y-8">
+    <div className="relative space-y-6">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-emerald-500/[0.02] to-transparent" />
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+
+      {/* Row 1: Header */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between relative">
         <div>
-          <h1 className="text-4xl font-semibold tracking-tighter">
-            {greeting}{greetingSuffix} {greetingName}
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-100">
+            {greeting}
+            {greetingSuffix} {greetingName}
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Here&apos;s how your business is doing.
-          </p>
-          {isGroup && viewMode === 'portfolio' && childOrgs.length > 0 && (
-            <div className="mt-3 flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5">
-              <LayoutGrid className="h-4 w-4 text-emerald-400 shrink-0" />
-              <span className="text-xs text-emerald-400">
-                Viewing all {childOrgs.length} businesses combined
-              </span>
-            </div>
+          {insight && (
+            <p className="mt-1.5 text-sm text-slate-500">{insight}</p>
           )}
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="inline-flex rounded-2xl border border-zinc-800 bg-zinc-950 p-1 text-xs text-slate-300">
+          <div className="inline-flex rounded-2xl border border-zinc-800 bg-zinc-950/80 p-1 text-xs text-slate-300">
             {(['7d', '30d', '90d'] as RangePreset[]).map((option) => (
               <button
                 key={option}
                 type="button"
                 onClick={() => handlePresetChange(option)}
-                className={`rounded-2xl px-3 py-1 ${
-                  preset === option ? 'bg-zinc-900 text-slate-100' : 'text-slate-400'
-                }`}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+                  preset === option
+                    ? 'bg-zinc-800 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-300',
+                )}
               >
                 {option === '7d' && 'This week'}
                 {option === '30d' && 'This month'}
@@ -181,7 +225,7 @@ export default function DashboardPage() {
           </div>
           <button
             type="button"
-            className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-1.5 text-xs text-slate-200 hover:bg-zinc-900"
+            className="rounded-2xl border border-zinc-800 bg-zinc-950/80 px-4 py-1.5 text-xs text-slate-200 hover:bg-zinc-900 transition-all"
             onClick={() => {
               if (!kpis) return;
               const rows = kpis.series.map((row) => ({
@@ -215,39 +259,38 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Loading skeleton */}
       {isLoading && !kpis ? (
-        <>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={i}
-                className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 animate-pulse"
-              >
-                <div className="h-3 w-16 rounded-full bg-zinc-800" />
-                <div className="mt-4 h-8 w-32 rounded-full bg-zinc-800" />
-                <div className="mt-3 h-3 w-24 rounded-full bg-zinc-900" />
-              </div>
-            ))}
+        <div className="space-y-4 animate-pulse">
+          <div className="h-36 rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-6" />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="h-28 rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5" />
+            <div className="h-28 rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5" />
+            <div className="h-28 rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5" />
           </div>
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-8 animate-pulse">
-            <div className="mb-6 h-4 w-40 rounded-full bg-zinc-800" />
-            <div className="h-96 rounded-2xl bg-zinc-900" />
-          </div>
-        </>
+          <div className="h-80 rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-6" />
+        </div>
       ) : isEmpty ? (
-        <div className="mt-10 flex justify-center">
-          <div className="flex max-w-md flex-col items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+        <motion.div
+          className="mt-6 flex justify-center"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="flex max-w-md flex-col items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
               <Sparkles className="h-6 w-6 text-emerald-400" />
             </div>
-            <h2 className="text-lg font-semibold tracking-tight">Let&apos;s get your numbers in here</h2>
+            <h2 className="text-lg font-semibold tracking-tight">
+              Let&apos;s get your numbers in here
+            </h2>
             <p className="mt-2 text-sm text-slate-400">
               Connect a spreadsheet or paste a Google Sheets link, and Aether will start tracking
               your revenue, costs, and performance automatically.
             </p>
             <button
               type="button"
-              className="mt-6 rounded-3xl bg-emerald-500 px-6 py-3 text-sm font-medium text-slate-950 hover:bg-emerald-600 transition shadow-[0_0_20px_rgba(16,185,129,0.15)]"
+              className="mt-6 rounded-2xl bg-emerald-500 px-6 py-3 text-sm font-medium text-slate-950 hover:bg-emerald-600 transition shadow-[0_0_30px_rgba(16,185,129,0.08)]"
               onClick={() => {
                 window.location.href = '/dashboard/data';
               }}
@@ -256,67 +299,102 @@ export default function DashboardPage() {
             </button>
             <p className="mt-3 text-xs text-slate-500">Takes about 2 minutes</p>
           </div>
-        </div>
+        </motion.div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
-              <div className="text-sm text-slate-400">Revenue</div>
-              <div className="mt-3 text-4xl font-semibold tracking-tighter">
-                {kpis ? (
-                  <AnimatedNumber
-                    value={kpis.revenue}
-                    prefix={
-                      new Intl.NumberFormat('en-US', {
+          {/* Row 2: Hero revenue card */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="relative overflow-hidden rounded-2xl border border-zinc-800/60 bg-gradient-to-br from-zinc-950 via-zinc-950 to-emerald-950/20 p-6"
+          >
+            <div className="pointer-events-none absolute right-[-80px] top-[-80px] h-96 w-96 rounded-full bg-emerald-500/[0.03] blur-3xl" />
+            <div className="relative flex items-start justify-between gap-6">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Total Revenue
+                </div>
+                <div className="mt-2 text-5xl font-bold tracking-tighter text-white">
+                  {kpis ? (
+                    <AnimatedNumber
+                      value={kpis.revenue}
+                      prefix={
+                        new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: org?.currency ?? 'USD',
+                          maximumFractionDigits: 0,
+                        })
+                          .formatToParts(0)
+                          .find((part) => part.type === 'currency')?.value ?? '$'
+                      }
+                      options={{
                         style: 'currency',
                         currency: org?.currency ?? 'USD',
                         maximumFractionDigits: 0,
-                      })
-                        .formatToParts(0)
-                        .find((part) => part.type === 'currency')?.value ?? '$'
-                    }
-                    options={{
-                      style: 'currency',
-                      currency: org?.currency ?? 'USD',
-                      maximumFractionDigits: 0,
-                    }}
-                  />
-                ) : (
-                  '—'
-                )}
-              </div>
-              <div className="mt-1 text-sm">
-                {kpis?.changes.revenuePct != null ? (
-                  <span
-                    className={
-                      kpis.changes.revenuePct > 0
-                        ? 'text-emerald-400'
-                        : kpis.changes.revenuePct < 0
-                          ? 'text-rose-400'
-                          : 'text-slate-500'
-                    }
-                  >
-                    {formatPercent(kpis.changes.revenuePct)} from {periodLabel}
-                  </span>
-                ) : (
-                  <span className="text-slate-500">No prior period yet</span>
-                )}
-              </div>
-              {benchmark && benchmark.median_monthly_revenue > 0 && (
-                <div className="mt-1 text-[11px] text-slate-500">
-                  Industry median:{' '}
-                  {new Intl.NumberFormat('en-US', {
-                    style: 'currency',
-                    currency: org?.currency ?? 'USD',
-                    maximumFractionDigits: 0,
-                  }).format(benchmark.median_monthly_revenue)}
+                      }}
+                    />
+                  ) : (
+                    '—'
+                  )}
                 </div>
-              )}
-            </div>
+                <div className="mt-2 flex items-center gap-3">
+                  {kpis?.changes.revenuePct != null && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-semibold',
+                        kpis.changes.revenuePct >= 0
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : 'bg-rose-500/10 text-rose-400',
+                      )}
+                    >
+                      {kpis.changes.revenuePct >= 0 ? '↑' : '↓'}{' '}
+                      {Math.abs(kpis.changes.revenuePct).toFixed(1)}%
+                    </span>
+                  )}
+                  <span className="text-xs text-slate-500">vs {periodLabel}</span>
+                </div>
+              </div>
 
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
-              <div className="text-sm text-slate-400">Staff Costs</div>
-              <div className="mt-3 text-4xl font-semibold tracking-tighter">
+              <div className="h-20 w-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="heroGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10B981" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="#10B981"
+                      strokeWidth={2}
+                      fill="url(#heroGradient)"
+                      dot={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Row 3: Secondary metrics */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+            className="grid grid-cols-1 gap-4 md:grid-cols-3"
+          >
+            {/* Staff Costs */}
+            <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5 transition-all duration-300 hover:border-zinc-700/80 group">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Staff Costs
+                </span>
+                {renderKpiChange(laborChange, false)}
+              </div>
+              <div className="mt-2 text-2xl font-bold tracking-tighter text-white">
                 {kpis ? (
                   <AnimatedNumber
                     value={kpis.laborCost}
@@ -339,25 +417,8 @@ export default function DashboardPage() {
                   '—'
                 )}
               </div>
-              <div className="mt-1 text-sm">
-                {kpis?.changes.laborCostPct != null ? (
-                  <span
-                    className={
-                      kpis.changes.laborCostPct > 0
-                        ? 'text-rose-400'
-                        : kpis.changes.laborCostPct < 0
-                          ? 'text-emerald-400'
-                          : 'text-slate-500'
-                    }
-                  >
-                    {formatPercent(kpis.changes.laborCostPct)} from {periodLabel}
-                  </span>
-                ) : (
-                  <span className="text-slate-500">No prior period yet</span>
-                )}
-              </div>
               {benchmark && kpis && kpis.revenue > 0 && (
-                <div className="mt-1 text-[11px] text-slate-500">
+                <div className="mt-2 text-[11px] text-slate-600">
                   Industry avg: {benchmark.median_staff_cost_pct.toFixed(0)}% of revenue
                   {(() => {
                     const userPct = (kpis.laborCost / kpis.revenue) * 100;
@@ -371,17 +432,21 @@ export default function DashboardPage() {
               )}
             </div>
 
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
-              <div className="flex items-center gap-1.5 text-sm text-slate-400">
-                Capacity
-                <span
-                  className="text-slate-500 cursor-help"
-                  title="How full your classes, rooms, or tables are on average"
-                >
-                  <Info className="h-3 w-3" />
+            {/* Capacity */}
+            <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5 transition-all duration-300 hover:border-zinc-700/80 group">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Capacity
+                  <span
+                    className="cursor-help text-slate-500"
+                    title="How full your classes, rooms, or tables are on average"
+                  >
+                    <Info className="h-3 w-3" />
+                  </span>
                 </span>
+                {renderKpiChange(capacityChange, true)}
               </div>
-              <div className="mt-3 text-4xl font-semibold tracking-tighter">
+              <div className="mt-2 text-2xl font-bold tracking-tighter text-white">
                 {kpis ? (
                   <AnimatedNumber
                     value={kpis.utilization}
@@ -392,33 +457,21 @@ export default function DashboardPage() {
                   '—'
                 )}
               </div>
-              <div className="mt-1 text-sm">
-                {kpis?.changes.utilizationPct != null ? (
-                  <span
-                    className={
-                      kpis.changes.utilizationPct > 0
-                        ? 'text-emerald-400'
-                        : kpis.changes.utilizationPct < 0
-                          ? 'text-rose-400'
-                          : 'text-slate-500'
-                    }
-                  >
-                    {formatPercent(kpis.changes.utilizationPct)} from {periodLabel}
-                  </span>
-                ) : (
-                  <span className="text-slate-500">No prior period yet</span>
-                )}
-              </div>
               {benchmark && benchmark.median_capacity > 0 && (
-                <div className="mt-1 text-[11px] text-slate-500">
+                <div className="mt-2 text-[11px] text-slate-600">
                   Industry avg: {benchmark.median_capacity.toFixed(0)}%
                 </div>
               )}
             </div>
 
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-emerald-500/30">
-              <div className="text-sm text-slate-400">Revenue Forecast</div>
-              <div className="mt-3 text-4xl font-semibold tracking-tighter">
+            {/* Forecast */}
+            <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5 transition-all duration-300 hover:border-zinc-700/80 group">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Revenue Forecast
+                </span>
+              </div>
+              <div className="mt-2 text-2xl font-bold tracking-tighter text-white">
                 {kpis?.forecast ? (
                   <AnimatedNumber
                     value={kpis.forecast}
@@ -441,65 +494,134 @@ export default function DashboardPage() {
                   '—'
                 )}
               </div>
-              <div className="mt-1 text-sm text-slate-500">
-                Based on the current period&apos;s trend
+              <div className="mt-2 text-[11px] text-slate-600">
+                Based on the current period&apos;s trend.
               </div>
             </div>
-          </div>
+          </motion.div>
 
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-8">
-            <div className="mb-6 flex items-center justify-between">
-              <div className="font-medium">Revenue &amp; Staff Costs</div>
-              <div className="text-xs text-slate-500">
-                {range.start} → {range.end}
+          {/* Row 4: Main chart */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-6"
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-white">
+                  Revenue &amp; Staff Costs
+                </div>
+                <div className="mt-0.5 text-[11px] text-slate-600">
+                  {format(new Date(range.start), 'MMM d')} —{' '}
+                  {format(new Date(range.end), 'MMM d, yyyy')}
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                  <span className="text-[11px] text-slate-500">Revenue</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full bg-slate-500" />
+                  <span className="text-[11px] text-slate-500">Staff Costs</span>
+                </div>
               </div>
             </div>
-            <div className="h-96">
+
+            <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                   data={chartData}
-                  margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+                  margin={{ top: 4, right: 4, bottom: 0, left: -12 }}
                 >
-                  <CartesianGrid stroke="#27272A" strokeDasharray="3 3" />
+                  <defs>
+                    <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#10B981" stopOpacity={0.15} />
+                      <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="laborGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#64748B" stopOpacity={0.1} />
+                      <stop offset="100%" stopColor="#64748B" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    stroke="#18181B"
+                    strokeDasharray="none"
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="dateLabel"
-                    stroke="#52525B"
-                    tick={{ fontSize: 11 }}
+                    stroke="none"
+                    tick={{ fill: '#52525B', fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
                   />
-                  <YAxis stroke="#52525B" tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#18181B',
-                      border: '1px solid #27272A',
-                      borderRadius: 16,
-                      color: '#e2e8f0',
-                      fontSize: 12,
-                      boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-                    }}
-                    labelStyle={{ color: '#94a3b8', marginBottom: 4 }}
+                  <YAxis
+                    stroke="none"
+                    tick={{ fill: '#3F3F46', fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) =>
+                      Number(v) >= 1000 ? `${(Number(v) / 1000).toFixed(0)}k` : v
+                    }
                   />
+                  {
+                    // @ts-ignore Recharts Tooltip typing is overly restrictive for styled usage
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#09090B',
+                        border: '1px solid #27272A',
+                        borderRadius: 12,
+                        padding: '10px 14px',
+                        boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
+                      }}
+                      labelStyle={{
+                        color: '#71717A',
+                        fontSize: 11,
+                        marginBottom: 6,
+                      }}
+                      itemStyle={{ color: '#e2e8f0', fontSize: 12, padding: 0 }}
+                      cursor={{ stroke: '#27272A', strokeWidth: 1 }}
+                    />
+                  }
                   <Area
-                    type="natural"
+                    type="monotone"
                     dataKey="revenue"
-                    stackId="1"
+                    name="Revenue"
                     stroke="#10B981"
-                    fill="#10B981"
-                    fillOpacity={0.2}
+                    strokeWidth={2}
+                    fill="url(#revenueGrad)"
+                    dot={false}
+                    activeDot={{
+                      r: 4,
+                      fill: '#10B981',
+                      stroke: '#0A0A0A',
+                      strokeWidth: 2,
+                    }}
                   />
                   <Area
-                    type="natural"
+                    type="monotone"
                     dataKey="labor"
-                    stackId="2"
-                    stroke="#64748B"
-                    fill="#64748B"
-                    fillOpacity={0.2}
+                    name="Staff Costs"
+                    stroke="#475569"
+                    strokeWidth={1.5}
+                    fill="url(#laborGrad)"
+                    dot={false}
+                    activeDot={{
+                      r: 3,
+                      fill: '#475569',
+                      stroke: '#0A0A0A',
+                      strokeWidth: 2,
+                    }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </motion.div>
         </>
       )}
     </div>
   );
 }
+

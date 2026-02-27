@@ -26,7 +26,6 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: To
   const { org } = useUser();
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [secondsAgo, setSecondsAgo] = useState<number | null>(null);
-  const [offlineDuration, setOfflineDuration] = useState(0);
   const router = useRouter();
 
   const planLabel = plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : 'Starter';
@@ -61,36 +60,6 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: To
     const id = window.setInterval(update, 10_000);
     return () => window.clearInterval(id);
   }, [lastUpdatedAt]);
-  useEffect(() => {
-    if (realtimeStatus === 'connected') {
-      setOfflineDuration(0);
-      return;
-    }
-    const id = window.setInterval(() => {
-      setOfflineDuration((d) => d + 1);
-    }, 1000);
-    return () => {
-      clearInterval(id);
-      setOfflineDuration(0);
-    };
-  }, [realtimeStatus]);
-
-  const liveLabel =
-    realtimeStatus === 'connected'
-      ? 'Live'
-      : realtimeStatus === 'connecting'
-        ? 'Connecting…'
-        : offlineDuration < 10
-          ? 'Reconnecting…'
-          : 'Offline';
-
-  const liveDotClass =
-    realtimeStatus === 'connected'
-      ? 'h-2 w-2 rounded-full bg-emerald-500 animate-pulse'
-      : realtimeStatus === 'connecting'
-        ? 'h-2 w-2 rounded-full bg-amber-400 animate-pulse'
-        : 'h-2 w-2 rounded-full bg-rose-500';
-
   return (
     <div className="h-16 border-b border-zinc-800 bg-[#0A0A0A]/90 backdrop-blur-md flex items-center px-8 relative">
       <div className="text-sm text-slate-400 font-medium">
@@ -98,16 +67,22 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: To
       </div>
 
       <div className="ml-auto flex items-center gap-4">
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <span className={liveDotClass} />
-          <span>{liveLabel}</span>
-          {secondsAgo != null && (
-            <span className="ml-2 text-[11px] text-slate-500">
-              Last updated:{' '}
-              {secondsAgo === 0 ? 'just now' : `${secondsAgo}s ago`}
-            </span>
-          )}
-        </div>
+        {realtimeStatus === 'connected' ? (
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Live</span>
+            {secondsAgo != null && (
+              <span className="text-[11px] text-slate-600">
+                · {secondsAgo === 0 ? 'just now' : `${secondsAgo}s ago`}
+              </span>
+            )}
+          </div>
+        ) : realtimeStatus === 'connecting' ? (
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span>Connecting…</span>
+          </div>
+        ) : null}
 
         <span className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
           {planLabel} plan
