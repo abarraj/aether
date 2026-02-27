@@ -16,6 +16,7 @@ import {
 import { Sidebar } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
 import { useUser } from '@/hooks/use-user';
+import { useOrg } from '@/hooks/use-org';
 import { createClient } from '@/lib/supabase/client';
 import { useRealtimeTable } from '@/hooks/use-realtime';
 
@@ -25,7 +26,18 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
-  const { user, profile, org, isLoading } = useUser();
+  const { user, profile, org: userOrg, isLoading } = useUser();
+  const {
+    org,
+    primaryOrg,
+    childOrgs,
+    viewMode,
+    isGroup,
+    switchToOrg,
+    switchToPortfolio,
+    activeOrgIds,
+    isLoading: isOrgLoading,
+  } = useOrg();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [alertsCount, setAlertsCount] = useState<number>(0);
 
@@ -41,27 +53,29 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
   ];
 
+  const effectiveOrg = org ?? primaryOrg;
+
   const loadAlerts = useCallback(async () => {
-    if (!org) return;
+    if (!effectiveOrg) return;
     const supabaseClient = createClient();
     const { count } = await supabaseClient
       .from('alerts')
       .select('id', { count: 'exact', head: true })
-      .eq('org_id', org.id)
+      .eq('org_id', effectiveOrg.id)
       .eq('is_read', false)
       .eq('is_dismissed', false);
     setAlertsCount(count ?? 0);
-  }, [org]);
+  }, [effectiveOrg]);
 
   useEffect(() => {
-    if (!isLoading && org) {
+    if (!isLoading && effectiveOrg) {
       void loadAlerts();
     }
-  }, [isLoading, org, loadAlerts]);
+  }, [isLoading, effectiveOrg, loadAlerts]);
 
   useRealtimeTable(
     'alerts',
-    org ? { column: 'org_id', value: org.id } : undefined,
+    effectiveOrg ? { column: 'org_id', value: effectiveOrg.id } : undefined,
     () => {
       if (alertsDebounceRef.current) {
         clearTimeout(alertsDebounceRef.current);
@@ -73,10 +87,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   );
 
   useEffect(() => {
-    if (!isLoading && user && (!profile?.org_id || !org)) {
+    if (!isLoading && user && (!profile?.org_id || !userOrg)) {
       router.push('/onboarding');
     }
-  }, [isLoading, user, profile, org, router]);
+  }, [isLoading, user, profile, userOrg, router]);
 
   const handleSignOut = async () => {
     try {
@@ -95,9 +109,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     'Member';
 
   const displayUserRole = profile?.role || 'Member';
-  const displayOrgName = org?.name || 'Your workspace';
+  const displayOrgName =
+    isGroup && viewMode === 'portfolio'
+      ? `${primaryOrg?.name ?? 'Portfolio'} (All)`
+      : org?.name || primaryOrg?.name || 'Your workspace';
 
-  if (isLoading || !user || !profile || !org) {
+  if (isLoading || isOrgLoading || !user || !profile || !primaryOrg) {
     return (
       <div className="flex h-screen bg-[#0A0A0A] overflow-hidden">
         <div className="w-72 border-r border-zinc-800 bg-[#0A0A0A] flex flex-col animate-pulse">
@@ -162,11 +179,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         userRole={displayUserRole}
         onSignOut={handleSignOut}
         alertsCount={alertsCount}
+        isGroup={isGroup}
+        childOrgs={childOrgs}
+        viewMode={viewMode}
+        activeOrgId={org?.id}
+        onSwitchOrg={switchToOrg}
+        onSwitchPortfolio={switchToPortfolio}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <Topbar
-          plan={org.plan}
+          plan={effectiveOrg?.plan ?? 'starter'}
           userName={displayUserName}
           onSignOut={handleSignOut}
           alertsCount={alertsCount}

@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { StepIndicator } from '@/components/shared/step-indicator';
 import { createClient } from '@/lib/supabase/client';
+import { cn } from '@/lib/utils';
 
 type Step = 1 | 2 | 3;
 
@@ -68,6 +69,7 @@ export default function OnboardingPage() {
   const [orgName, setOrgName] = useState<string>('');
   const [industry, setIndustry] = useState<IndustryOption | ''>('');
   const [slug, setSlug] = useState<string>('');
+  const [isMultiBrand, setIsMultiBrand] = useState(false);
 
   // Step 2
   const [timezone, setTimezone] = useState<string>('');
@@ -216,6 +218,7 @@ export default function OnboardingPage() {
           timezone,
           currency,
           onboarding_completed: true,
+          org_type: isMultiBrand ? 'group' : 'standalone',
         })
         .select('id')
         .single();
@@ -224,6 +227,16 @@ export default function OnboardingPage() {
         toast.error('Unable to create your organization. Please try again.');
         setIsSubmitting(false);
         return;
+      }
+
+      const newOrgId: string | undefined = org.id;
+
+      if (isMultiBrand && newOrgId) {
+        await supabase.from('org_memberships').insert({
+          user_id: user.id,
+          org_id: newOrgId,
+          role: 'owner',
+        });
       }
 
       const { error: profileError } = await supabase
@@ -326,6 +339,33 @@ export default function OnboardingPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">
+                    Do you operate multiple businesses or brands?
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsMultiBrand(!isMultiBrand)}
+                    className={cn(
+                      'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                      isMultiBrand ? 'bg-emerald-500' : 'bg-zinc-700',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                        isMultiBrand ? 'translate-x-6' : 'translate-x-1',
+                      )}
+                    />
+                  </button>
+                  {isMultiBrand && (
+                    <p className="text-xs text-slate-400">
+                      We&apos;ll set you up as a business group. You can add individual businesses
+                      from the sidebar after setup.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1">

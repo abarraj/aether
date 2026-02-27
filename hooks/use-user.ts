@@ -24,6 +24,8 @@ export interface Organization {
   currency: string;
   logo_url: string | null;
   plan: string;
+   org_type: string;
+   parent_org_id: string | null;
 }
 
 interface UserState {
@@ -65,7 +67,7 @@ async function loadUserState(): Promise<UserState> {
   if (profile?.org_id) {
     const { data: organization } = await supabase
       .from('organizations')
-      .select('id, name, slug, industry, timezone, currency, logo_url, plan')
+      .select('id, name, slug, industry, timezone, currency, logo_url, plan, org_type, parent_org_id')
       .eq('id', profile.org_id)
       .maybeSingle<Organization>();
 

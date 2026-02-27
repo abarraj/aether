@@ -70,3 +70,15 @@ export interface EntityRelationship {
   properties: Record<string, unknown>;
 }
 
+export type OrgType = 'standalone' | 'group' | 'unit';
+
+export interface OrgChild {
+  id: string;
+  name: string;
+  slug: string;
+  industry: string | null;
+  currency: string;
+  org_type: OrgType;
+  parent_org_id: string | null;
+}
+

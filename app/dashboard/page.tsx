@@ -11,10 +11,11 @@ import {
   YAxis,
 } from 'recharts';
 
-import { Sparkles, Info } from 'lucide-react';
+import { Sparkles, Info, LayoutGrid } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 
 import { useUser } from '@/hooks/use-user';
+import { useOrg } from '@/hooks/use-org';
 import { useKpis } from '@/hooks/use-kpis';
 import { useRealtimeTable } from '@/hooks/use-realtime';
 import { toast } from 'sonner';
@@ -37,7 +38,8 @@ function getInitialRange(): { period: Period; preset: RangePreset; range: DateRa
 }
 
 export default function DashboardPage() {
-  const { profile, org } = useUser();
+  const { profile } = useUser();
+  const { org, isGroup, viewMode, activeOrgIds, childOrgs } = useOrg();
 
   const initial = useMemo(getInitialRange, []);
   const [period, setPeriod] = useState<Period>(initial.period);
@@ -45,7 +47,7 @@ export default function DashboardPage() {
   const [range, setRange] = useState<DateRange>(initial.range);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const { kpis, isLoading } = useKpis(period, range, refreshKey);
+  const { kpis, isLoading } = useKpis(period, range, refreshKey, activeOrgIds);
 
   const greetingName =
     profile?.full_name?.split(' ')[0] ??
@@ -145,6 +147,14 @@ export default function DashboardPage() {
           <p className="mt-1 text-sm text-slate-400">
             Here&apos;s how your business is doing.
           </p>
+          {isGroup && viewMode === 'portfolio' && childOrgs.length > 0 && (
+            <div className="mt-3 flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5">
+              <LayoutGrid className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-xs text-emerald-400">
+                Viewing all {childOrgs.length} businesses combined
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">

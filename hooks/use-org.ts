@@ -1,14 +1,33 @@
-// Hook to return the current organization details from Supabase.
+// Hook to expose active organization, portfolio mode, and switching.
 'use client';
 
-import { useUser } from '@/hooks/use-user';
+import { useUser, type Organization } from '@/hooks/use-user';
+import { useOrgSwitcher, type ViewMode } from '@/hooks/use-org-switcher';
 
-export function useOrg() {
-  const { org, isLoading } = useUser();
+export function useOrg(): {
+  org: Organization | null;
+  primaryOrg: Organization | null;
+  childOrgs: Organization[];
+  viewMode: ViewMode;
+  isGroup: boolean;
+  switchToOrg: (orgId: string) => void;
+  switchToPortfolio: () => void;
+  activeOrgIds: string[];
+  isLoading: boolean;
+} {
+  const { org: primaryOrg, isLoading: isUserLoading } = useUser();
+  const switcher = useOrgSwitcher();
 
   return {
-    org,
-    isLoading,
+    org: switcher.activeOrg ?? primaryOrg,
+    primaryOrg,
+    childOrgs: switcher.childOrgs,
+    viewMode: switcher.viewMode,
+    isGroup: switcher.isGroup,
+    switchToOrg: switcher.switchToOrg,
+    switchToPortfolio: switcher.switchToPortfolio,
+    activeOrgIds: switcher.activeOrgIds,
+    isLoading: isUserLoading || switcher.isLoading,
   };
 }
 

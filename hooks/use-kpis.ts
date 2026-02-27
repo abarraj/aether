@@ -17,6 +17,7 @@ export function useKpis(
   period: Period,
   dateRange: DateRange,
   refreshKey = 0,
+  orgIds?: string[],
 ): UseKpisState {
   const { org, isLoading: isOrgLoading } = useOrg();
 
@@ -30,12 +31,31 @@ export function useKpis(
     let cancelled = false;
 
     const run = async () => {
-      if (!org) return;
+      if (!org && (!orgIds || orgIds.length === 0)) return;
 
       setState((previous) => ({ ...previous, isLoading: true, error: null }));
 
       try {
-        const data = await getKPIs(org.id, period, dateRange);
+        const idsToQuery = orgIds && orgIds.length > 0 ? orgIds : org ? [org.id] : [];
+        if (idsToQuery.length === 0) return;
+
+        const results = await Promise.all(idsToQuery.map((id) => getKPIs(id, period, dateRange)));
+        const data: KPIData = {
+          revenue: results.reduce((sum, r) => sum + r.revenue, 0),
+          laborCost: results.reduce((sum, r) => sum + r.laborCost, 0),
+          utilization:
+            results.length > 0
+              ? results.reduce((sum, r) => sum + r.utilization, 0) / results.length
+              : 0,
+          forecast:
+            results.reduce((sum, r) => sum + (r.forecast ?? 0), 0) || null,
+          changes: {
+            revenuePct: results[0]?.changes.revenuePct ?? null,
+            laborCostPct: results[0]?.changes.laborCostPct ?? null,
+            utilizationPct: results[0]?.changes.utilizationPct ?? null,
+          },
+          series: results[0]?.series ?? [],
+        };
         if (!cancelled) {
           setState({
             kpis: data,
@@ -54,14 +74,13 @@ export function useKpis(
       }
     };
 
-    if (!isOrgLoading && org) {
+    if (!isOrgLoading && (org || (orgIds && orgIds.length > 0))) {
       void run();
     }
-
     return () => {
       cancelled = true;
     };
-  }, [org, isOrgLoading, period, dateRange.start, dateRange.end, refreshKey]);
+  }, [org, isOrgLoading, period, dateRange.start, dateRange.end, refreshKey, orgIds]);
 
   return state;
 }
