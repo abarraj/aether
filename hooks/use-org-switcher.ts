@@ -77,7 +77,7 @@ export function useOrgSwitcher(org: Organization | null, isUserLoading: boolean)
     };
 
     void fetchChildren();
-  }, [org, isUserLoading, isGroup]);
+  }, [org?.id, isUserLoading, isGroup]);
 
   const switchToOrg = useCallback(
     (orgId: string) => {
