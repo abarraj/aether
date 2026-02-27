@@ -154,9 +154,9 @@ export function EntityDetailPanel({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 480, opacity: 0 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="fixed right-0 top-0 z-50 h-full w-[480px] border-l border-zinc-800 bg-[#0A0A0A] shadow-[0_0_40px_rgba(0,0,0,0.75)]"
+            className="fixed right-0 top-0 z-50 h-full w-[480px] flex flex-col border-l border-zinc-800 bg-[#0A0A0A] shadow-[0_0_40px_rgba(0,0,0,0.75)]"
           >
-            <div className="sticky top-0 z-10 border-b border-zinc-800 bg-[#0A0A0A]/95 px-6 py-4 backdrop-blur-sm">
+            <div className="shrink-0 border-b border-zinc-800 bg-[#0A0A0A] px-6 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div
@@ -191,7 +191,7 @@ export function EntityDetailPanel({
               )}
             </div>
 
-            <div className="h-full overflow-y-auto pb-6">
+            <div className="flex-1 overflow-y-auto pb-6">
               {/* Properties */}
               <section className="px-6 py-5">
                 <div className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
