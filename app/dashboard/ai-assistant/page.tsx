@@ -28,7 +28,8 @@ function getInitialRange(): { period: Period; range: DateRange } {
 export default function AIAssistantPage() {
   const { profile, org } = useUser();
   const initial = getInitialRange();
-  const { kpis } = useKpis(initial.period, initial.range);
+  const orgIds = org ? [org.id] : [];
+  const { kpis } = useKpis(initial.period, initial.range, 0, orgIds);
   const hasData = (kpis?.series?.length ?? 0) > 0;
   const { messages, sendMessage, status } = useChat();
 

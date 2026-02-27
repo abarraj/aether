@@ -124,10 +124,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     '/dashboard/settings': 'Settings',
   };
 
-  const topbarLabel =
-    Object.entries(pageLabels).find(
-      ([path]) => pathname === path || pathname.startsWith(`${path}/`),
-    )?.[1] ?? 'Aether';
+  const topbarLabel = (() => {
+    if (pageLabels[pathname]) return pageLabels[pathname];
+    const sorted = Object.entries(pageLabels).sort(
+      ([a], [b]) => b.length - a.length,
+    );
+    return (
+      sorted.find(([path]) => pathname.startsWith(`${path}/`))?.[1] ?? 'Aether'
+    );
+  })();
 
   if (isLoading || isOrgLoading || !user || !profile || !primaryOrg) {
     return (

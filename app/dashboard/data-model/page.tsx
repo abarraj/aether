@@ -42,8 +42,16 @@ import { toast } from 'sonner';
 
 import { createClient } from '@/lib/supabase/client';
 import { useOntology } from '@/hooks/use-ontology';
-import type { Entity, EntityProperty, EntityType, PropertyType, RelationshipType } from '@/types/domain';
+import type {
+  Entity,
+  EntityProperty,
+  EntityRelationship,
+  EntityType,
+  PropertyType,
+  RelationshipType,
+} from '@/types/domain';
 import { cn } from '@/lib/utils';
+import { EntityDetailPanel } from '@/components/data/entity-detail-panel';
 
 function formatPropertyValue(value: unknown, type: PropertyType): string {
   if (value == null) return '—';
@@ -230,6 +238,7 @@ export default function DataModelPage() {
   const [localDescription, setLocalDescription] = useState('');
   const previousNameRef = useRef('');
   const previousDescRef = useRef('');
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
 
   const selectedType = selectedTypeId ? (entityTypes.find((et) => et.id === selectedTypeId) || null) : null;
   const entitiesForType = selectedType
@@ -246,6 +255,13 @@ export default function DataModelPage() {
     });
     return map;
   }, [entityTypes, relationshipTypes]);
+
+  const selectedEntity = selectedEntityId
+    ? entities.find((e) => e.id === selectedEntityId) ?? null
+    : null;
+  const selectedEntityType = selectedEntity
+    ? entityTypes.find((et) => et.id === selectedEntity.entity_type_id) ?? null
+    : null;
 
   const relationshipGroups = useMemo(
     () =>
@@ -388,8 +404,36 @@ export default function DataModelPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-[70vh] items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950">
-        <div className="text-sm text-slate-400">Loading data model…</div>
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="h-6 w-32 rounded-full bg-zinc-800" />
+            <div className="mt-2 h-3 w-56 rounded-full bg-zinc-900" />
+          </div>
+          <div className="h-9 w-40 rounded-2xl border border-zinc-800 bg-zinc-950" />
+        </div>
+
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={i}
+              className="rounded-3xl border border-zinc-800 bg-zinc-950 overflow-hidden animate-pulse"
+            >
+              <div className="px-6 pt-5 pb-3 flex items-center gap-3 border-b border-zinc-800/60">
+                <div className="h-10 w-10 rounded-2xl bg-zinc-800" />
+                <div className="h-4 w-24 rounded-full bg-zinc-800" />
+              </div>
+              <div className="px-4 py-4 space-y-3">
+                <div className="h-10 rounded-2xl bg-zinc-900" />
+                <div className="h-10 rounded-2xl bg-zinc-900" />
+                <div className="h-10 rounded-2xl bg-zinc-900" />
+              </div>
+              <div className="px-6 py-3 border-t border-zinc-800/50">
+                <div className="h-3 w-32 rounded-full bg-zinc-900" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -597,8 +641,7 @@ export default function DataModelPage() {
                                   key={m.entity.id}
                                   type="button"
                                   onClick={() => {
-                                    setActiveTab('graph');
-                                    setSelectedTypeId(et.id);
+                                    setSelectedEntityId(m.entity.id);
                                   }}
                                   className={cn(
                                     'w-full px-3 py-3 text-left transition-colors',
@@ -642,8 +685,10 @@ export default function DataModelPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setActiveTab('graph');
-                                  setSelectedTypeId(et.id);
+                                  const next = sortedMetrics
+                                    .slice(visibleMetrics.length)
+                                    .map((m) => m.entity.id)[0];
+                                  if (next) setSelectedEntityId(next);
                                 }}
                                 className="w-full px-3 py-2 text-center text-xs text-slate-500 hover:bg-zinc-900/70 rounded-b-2xl"
                               >
@@ -1079,6 +1124,17 @@ export default function DataModelPage() {
           </div>
         </div>
       )}
+
+      <EntityDetailPanel
+        entity={selectedEntity}
+        entityType={selectedEntityType}
+        allEntities={entities}
+        allRelationshipTypes={relationshipTypes}
+        allEntityRelationships={relationships as EntityRelationship[]}
+        allEntityTypes={entityTypes}
+        onClose={() => setSelectedEntityId(null)}
+        onSelectEntity={(id) => setSelectedEntityId(id)}
+      />
     </div>
   );
 }

@@ -214,7 +214,26 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {isEmpty ? (
+      {isLoading && !kpis ? (
+        <>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 animate-pulse"
+              >
+                <div className="h-3 w-16 rounded-full bg-zinc-800" />
+                <div className="mt-4 h-8 w-32 rounded-full bg-zinc-800" />
+                <div className="mt-3 h-3 w-24 rounded-full bg-zinc-900" />
+              </div>
+            ))}
+          </div>
+          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-8 animate-pulse">
+            <div className="mb-6 h-4 w-40 rounded-full bg-zinc-800" />
+            <div className="h-96 rounded-2xl bg-zinc-900" />
+          </div>
+        </>
+      ) : isEmpty ? (
         <div className="mt-10 flex justify-center">
           <div className="flex max-w-md flex-col items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
