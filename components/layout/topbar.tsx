@@ -14,9 +14,10 @@ interface TopbarProps {
   userName: string;
   onSignOut: () => void;
   alertsCount?: number;
+  title?: string;
 }
 
-export function Topbar({ plan, userName, onSignOut, alertsCount = 0 }: TopbarProps) {
+export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: TopbarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const [latestAlerts, setLatestAlerts] = useState<
@@ -76,7 +77,9 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0 }: TopbarPro
 
   return (
     <div className="h-16 border-b border-zinc-800 bg-[#0A0A0A]/90 backdrop-blur-md flex items-center px-8 relative">
-      <div className="text-sm text-slate-400 font-medium">AI COO Command</div>
+      <div className="text-sm text-slate-400 font-medium">
+        {title ?? 'Aether'}
+      </div>
 
       <div className="ml-auto flex items-center gap-4">
         <div className="flex items-center gap-2 text-xs text-slate-500">

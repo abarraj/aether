@@ -3,7 +3,7 @@
 // Dashboard layout shell with sidebar and topbar wired to Supabase auth.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   FileSpreadsheet,
@@ -26,6 +26,7 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, profile, org: userOrg, isLoading } = useUser();
   const {
     org,
@@ -114,6 +115,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       ? `${primaryOrg?.name ?? 'Portfolio'} (All)`
       : org?.name || primaryOrg?.name || 'Your workspace';
 
+  const pageLabels: Record<string, string> = {
+    '/dashboard': 'Dashboard',
+    '/dashboard/data': 'Connected Data',
+    '/dashboard/data-model': 'Your Business',
+    '/dashboard/ai-assistant': 'AI Assistant',
+    '/dashboard/alerts': 'Alerts',
+    '/dashboard/settings': 'Settings',
+  };
+
+  const topbarLabel =
+    Object.entries(pageLabels).find(
+      ([path]) => pathname === path || pathname.startsWith(`${path}/`),
+    )?.[1] ?? 'Aether';
+
   if (isLoading || isOrgLoading || !user || !profile || !primaryOrg) {
     return (
       <div className="flex h-screen bg-[#0A0A0A] overflow-hidden">
@@ -193,6 +208,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           userName={displayUserName}
           onSignOut={handleSignOut}
           alertsCount={alertsCount}
+          title={topbarLabel}
         />
         <main className="flex-1 overflow-auto p-8">{children}</main>
       </div>

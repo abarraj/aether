@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import {
   User,
@@ -246,6 +247,29 @@ export default function DataModelPage() {
     return map;
   }, [entityTypes, relationshipTypes]);
 
+  const relationshipGroups = useMemo(
+    () =>
+      relationshipTypes
+        .map((relType) => {
+          const seen = new Set<string>();
+          const items: { from: string; to: string }[] = [];
+          relationships.forEach((rel) => {
+            if (rel.relationship_type_id !== relType.id) return;
+            const fromEntity = entities.find((e) => e.id === rel.from_entity_id);
+            const toEntity = entities.find((e) => e.id === rel.to_entity_id);
+            if (!fromEntity || !toEntity) return;
+            const key = `${fromEntity.id}:${toEntity.id}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            items.push({ from: fromEntity.name, to: toEntity.name });
+          });
+          if (items.length === 0) return null;
+          return { type: relType, items };
+        })
+        .filter((group): group is { type: RelationshipType; items: { from: string; to: string }[] } => group != null),
+    [relationshipTypes, relationships, entities],
+  );
+
   useEffect(() => {
     if (!selectedType) return;
     setLocalName(selectedType.name);
@@ -378,7 +402,9 @@ export default function DataModelPage() {
             Your Business
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            How Aether understands your operations.
+            {entityTypes.length === 0 || entities.length === 0
+              ? 'Connect your data and Aether will map your business.'
+              : `Aether found ${entities.length} entries across ${entityTypes.length} categories in your business.`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -443,110 +469,273 @@ export default function DataModelPage() {
 
       {entityTypes.length > 0 &&
         entities.some((e) => e.source_upload_id) && (
-          <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
-            <Sparkles className="h-4 w-4 shrink-0 text-emerald-400" />
-            <span className="text-xs text-emerald-400">
-              Aether detected {entityTypes.length} categor{entityTypes.length === 1 ? 'y' : 'ies'} and{' '}
-              {relationshipTypes.length} connection{relationshipTypes.length === 1 ? '' : 's'} from your data
-            </span>
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-5 py-4">
+            <div className="flex items-start gap-3">
+              <Sparkles className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="text-sm font-medium text-emerald-300">
+                  Aether mapped your business automatically
+                </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  Found {entityTypes.length} categories (
+                  {entityTypes.map((et) => et.name).join(', ')}), {entities.length} unique entries, and{' '}
+                  {relationshipTypes.length} connections from your data.
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
       {activeTab === 'overview' && (
         <div className="space-y-8">
           {entityTypes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-16 text-center">
-              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 p-3">
-                <Network className="h-12 w-12 text-emerald-400" />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+            >
+              <div className="flex flex-col items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 px-10 py-16 text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 p-3">
+                  <Network className="h-12 w-12 text-emerald-400" />
+                </div>
+                <h2 className="text-lg font-semibold tracking-tight text-slate-100">
+                  Aether will map your business automatically
+                </h2>
+                <p className="mt-2 max-w-sm text-sm text-slate-400">
+                  Once you connect a spreadsheet, we&apos;ll detect your team members, locations, products, and how they all relate.
+                  No setup needed.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push('/dashboard/data')}
+                  className="mt-6 rounded-2xl bg-emerald-500 px-6 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-600"
+                >
+                  Connect Your Data
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateEntityTypeOpen(true)}
+                  className="mt-3 text-xs text-slate-400 hover:text-slate-200 underline"
+                >
+                  Or create categories manually
+                </button>
               </div>
-              <h2 className="text-lg font-semibold tracking-tight text-slate-100">Aether will map your business automatically</h2>
-              <p className="mt-2 max-w-sm text-sm text-slate-400">
-                Once you connect a spreadsheet, we&apos;ll detect your team members, locations, products, and how they all relate. No setup needed.
-              </p>
-              <button
-                type="button"
-                onClick={() => router.push('/dashboard/data')}
-                className="mt-6 rounded-2xl bg-emerald-500 px-6 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-600"
-              >
-                Connect Your Data
-              </button>
-              <button
-                type="button"
-                onClick={() => setCreateEntityTypeOpen(true)}
-                className="mt-3 text-xs text-slate-400 hover:text-slate-200 underline"
-              >
-                Or create categories manually
-              </button>
-            </div>
+            </motion.div>
           ) : (
             <>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-                {entityTypes.map((et) => {
+                {entityTypes.map((et, index) => {
                   const IconComponent = ICON_MAP[et.icon?.toLowerCase()] ?? Circle;
                   const typeEntities = entities.filter((e) => e.entity_type_id === et.id);
-                  const topThree = typeEntities
-                    .map((e) => ({ entity: e, sorted: entityPropertiesSorted(e, et) }))
-                    .sort((a, b) => {
-                      const aVal = a.sorted[0]?.value;
-                      const bVal = b.sorted[0]?.value;
-                      const an = typeof aVal === 'number' ? aVal : Number(aVal);
-                      const bn = typeof bVal === 'number' ? bVal : Number(bVal);
-                      return (Number.isNaN(bn) ? 0 : bn) - (Number.isNaN(an) ? 0 : an);
+                  const metrics = typeEntities
+                    .map((e) => {
+                      const sorted = entityPropertiesSorted(e, et);
+                      const primary = sorted[0];
+                      if (!primary) {
+                        return null;
+                      }
+                      const raw = primary.value;
+                      const n =
+                        typeof raw === 'number'
+                          ? raw
+                          : Number(String(raw).replace(/[,$%]/g, ''));
+                      const numeric = Number.isNaN(n) ? 0 : n;
+                      return { entity: e, primary, numeric };
                     })
-                    .slice(0, 3);
+                    .filter((m): m is { entity: Entity; primary: { key: string; label: string; value: unknown; type: PropertyType }; numeric: number } => m != null);
+                  const sortedMetrics = [...metrics].sort((a, b) => b.numeric - a.numeric);
+                  const totalValue = sortedMetrics.reduce((sum, m) => sum + m.numeric, 0);
+                  const maxValue = sortedMetrics[0]?.numeric ?? 0;
+                  const visibleMetrics = sortedMetrics.slice(0, 5);
+                  const remainingCount = sortedMetrics.length - visibleMetrics.length;
+                  const primaryType = sortedMetrics[0]?.primary.type;
+                  const formatTotal = (value: number) =>
+                    primaryType
+                      ? formatPropertyValue(value, primaryType)
+                      : new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
+                  const avgValue =
+                    sortedMetrics.length > 0 ? totalValue / sortedMetrics.length : 0;
                   return (
-                    <div
+                    <motion.div
                       key={et.id}
-                      className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6"
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: index * 0.1, ease: 'easeOut' }}
+                      className="rounded-3xl border border-zinc-800 bg-zinc-950 p-0 overflow-hidden transition-all duration-300 hover:border-zinc-700"
                     >
-                      <div className="flex items-center gap-2 mb-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl shrink-0" style={{ backgroundColor: `${et.color}1A` }}>
+                      <div className="px-6 pt-5 pb-3 flex items-center gap-3 border-b border-zinc-800/60">
+                        <div
+                          className="flex h-10 w-10 items-center justify-center rounded-2xl shrink-0"
+                          style={{ backgroundColor: `${et.color}1A` }}
+                        >
                           <IconComponent className="h-5 w-5" style={{ color: et.color }} />
                         </div>
-                        <span className="text-lg font-semibold text-slate-100">{et.name}</span>
-                        <span className="text-xs text-slate-400 ml-auto">{typeEntities.length} total</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-base font-semibold tracking-tight text-slate-100">
+                            {et.name}
+                          </div>
+                        </div>
+                        <span className="rounded-full bg-zinc-900 px-2.5 py-0.5 text-[11px] font-medium text-slate-400">
+                          {typeEntities.length} total
+                        </span>
                       </div>
-                      <ul className="space-y-2">
-                        {topThree.map(({ entity: e, sorted }) => (
-                          <li key={e.id} className="text-sm">
-                            <span className="font-medium text-slate-200">{e.name}</span>
-                            {sorted[0] != null && (
-                              <span className="text-slate-400 ml-1">— {formatPropertyValue(sorted[0].value, sorted[0].type)} {sorted[0].label.toLowerCase()}</span>
+
+                      <div className="px-4 pb-3">
+                        {sortedMetrics.length === 0 ? (
+                          <div className="mt-3 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/40 px-3 py-3 text-xs text-slate-500 text-center">
+                            No metrics yet for this category.
+                          </div>
+                        ) : (
+                          <div className="mt-3 rounded-2xl bg-zinc-900/50 overflow-hidden">
+                            {visibleMetrics.map((m, idx) => {
+                              const sharePct =
+                                totalValue > 0 ? (m.numeric / totalValue) * 100 : 0;
+                              const widthPct =
+                                maxValue > 0 ? `${(m.numeric / maxValue) * 100}%` : '0%';
+                              return (
+                                <button
+                                  key={m.entity.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveTab('graph');
+                                    setSelectedTypeId(et.id);
+                                  }}
+                                  className={cn(
+                                    'w-full px-3 py-3 text-left transition-colors',
+                                    idx === 0 ? 'rounded-t-2xl' : '',
+                                    idx === visibleMetrics.length - 1 &&
+                                      remainingCount <= 0
+                                      ? 'rounded-b-2xl'
+                                      : '',
+                                    'border-b border-zinc-800/50 last:border-b-0 hover:bg-zinc-900/80',
+                                  )}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="truncate text-sm font-medium text-slate-200">
+                                      {m.entity.name}
+                                    </span>
+                                    <span className="text-sm font-semibold text-slate-100">
+                                      {formatPropertyValue(
+                                        m.primary.value,
+                                        m.primary.type,
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 flex items-center">
+                                    <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                                      <div
+                                        className="h-full rounded-full"
+                                        style={{
+                                          width: widthPct,
+                                          backgroundColor: `${et.color}CC`,
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="ml-2 text-[10px] text-slate-500">
+                                      {sharePct.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                            {remainingCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('graph');
+                                  setSelectedTypeId(et.id);
+                                }}
+                                className="w-full px-3 py-2 text-center text-xs text-slate-500 hover:bg-zinc-900/70 rounded-b-2xl"
+                              >
+                                + {remainingCount} more
+                              </button>
                             )}
-                          </li>
-                        ))}
-                      </ul>
-                      <button
-                        type="button"
-                        onClick={() => { setActiveTab('graph'); setSelectedTypeId(et.id); }}
-                        className="mt-4 text-xs text-emerald-400 hover:text-emerald-300"
-                      >
-                        View all →
-                      </button>
-                    </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between border-t border-zinc-800/50 px-6 py-3">
+                        <div className="flex items-center text-xs text-slate-400">
+                          <span>
+                            Total:{' '}
+                            <span className="font-medium text-slate-300">
+                              {formatTotal(totalValue)}
+                            </span>
+                          </span>
+                          <span className="mx-2 text-zinc-600">·</span>
+                          <span>
+                            Avg:{' '}
+                            <span className="font-medium text-slate-300">
+                              {formatTotal(avgValue)}
+                            </span>
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('graph');
+                            setSelectedTypeId(et.id);
+                          }}
+                          className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
+                        >
+                          View all →
+                        </button>
+                      </div>
+                    </motion.div>
                   );
                 })}
               </div>
-              {relationshipTypes.length > 0 && (
+              {relationshipGroups.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-medium text-slate-300 mb-3">How things connect</h3>
-                  <ul className="space-y-2">
-                    {relationshipTypes.slice(0, 8).map((rel) => {
-                      const fromType = entityTypes.find((t) => t.id === rel.from_type_id);
-                      const toType = entityTypes.find((t) => t.id === rel.to_type_id);
-                      const fromEntities = entities.filter((e) => e.entity_type_id === rel.from_type_id);
-                      const toEntities = entities.filter((e) => e.entity_type_id === rel.to_type_id);
-                      const sampleFrom = fromEntities[0]?.name;
-                      const sampleTo = toEntities.find((e) => e.id !== fromEntities[0]?.id)?.name ?? toEntities[0]?.name;
+                  <h3 className="mb-3 text-sm font-medium text-slate-300">
+                    How things connect
+                  </h3>
+                  <div className="space-y-3">
+                    {relationshipGroups.map((group) => {
+                      const visible = group.items.slice(0, 5);
+                      const extra = group.items.length - visible.length;
                       return (
-                        <li key={rel.id} className="text-sm text-slate-400">
-                          <span className="text-slate-200">{sampleFrom ?? fromType?.name}</span>
-                          {' '}{rel.name}{' '}
-                          <span className="text-slate-200">{sampleTo ?? toType?.name}</span>
-                        </li>
+                        <div key={group.type.id} className="space-y-1.5">
+                          <div className="text-xs font-medium text-slate-400">
+                            {group.type.name.replace(/_/g, ' ')} ({group.items.length})
+                          </div>
+                          <div className="space-y-1.5">
+                            {visible.map((item, idx) => (
+                              <div
+                                key={`${item.from}-${item.to}-${idx}`}
+                                className="flex flex-wrap items-center gap-2"
+                              >
+                                <span className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-slate-200">
+                                  {item.from}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <div className="h-px w-4 bg-zinc-600" />
+                                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-slate-400 font-medium whitespace-nowrap">
+                                    {group.type.name.replace(/_/g, ' ')}
+                                  </span>
+                                  <div className="h-px w-4 bg-zinc-600" />
+                                </span>
+                                <span className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-slate-200">
+                                  {item.to}
+                                </span>
+                              </div>
+                            ))}
+                            {extra > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('graph');
+                                }}
+                                className="text-xs text-slate-500 hover:text-slate-300"
+                              >
+                                + {extra} more
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       );
                     })}
-                  </ul>
+                  </div>
                 </div>
               )}
             </>
