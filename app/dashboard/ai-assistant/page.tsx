@@ -2,10 +2,9 @@
 
 // AI Assistant chat experience within the Aether dashboard.
 
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Send, Loader2 } from 'lucide-react';
 import { useChat } from '@ai-sdk/react';
-import type { UIMessage } from 'ai';
 
 import { useKpis } from '@/hooks/use-kpis';
 import { useUser } from '@/hooks/use-user';
@@ -25,18 +24,35 @@ function getInitialRange(): { period: Period; range: DateRange } {
   };
 }
 
+function getMessageText(message: {
+  content?: string;
+  parts?: Array<{ type: string; text?: string }>;
+}): string {
+  if (typeof message.content === 'string' && message.content.length > 0) {
+    return message.content;
+  }
+  if (Array.isArray(message.parts)) {
+    return message.parts
+      .filter((p) => p.type === 'text' && typeof p.text === 'string')
+      .map((p) => p.text!)
+      .join('\n');
+  }
+  return '';
+}
+
 export default function AIAssistantPage() {
   const { profile, org } = useUser();
   const initial = getInitialRange();
   const orgIds = org ? [org.id] : [];
   const { kpis } = useKpis(initial.period, initial.range, 0, orgIds);
   const hasData = (kpis?.series?.length ?? 0) > 0;
-  const { messages, sendMessage, status } = useChat();
+
+  const { messages, status, sendMessage } = useChat({
+    api: '/api/chat',
+  } as any);
 
   const [input, setInput] = useState<string>('');
   const isLoading = status === 'streaming' || status === 'submitted';
-
-  const orgLabel = org?.name ?? 'your organization';
 
   const suggestedPrompts = hasData
     ? [
@@ -53,7 +69,7 @@ export default function AIAssistantPage() {
 
   const handleSuggestedClick = async (prompt: string) => {
     setInput('');
-    await sendMessage({ role: 'user', content: prompt } as unknown as UIMessage);
+    await sendMessage({ role: 'user', content: prompt } as any);
   };
 
   const greetingName = profile?.full_name?.split(' ')[0] ?? 'Operator';
@@ -102,7 +118,8 @@ export default function AIAssistantPage() {
               Welcome, {greetingName}
             </div>
             <div className="text-sm text-slate-300">
-              Ask me anything about your business — revenue, staffing, performance, or what to do next.
+              Ask me anything about your business — revenue, staffing, performance, or what to do
+              next.
             </div>
             <div className="mt-4">
               <RecommendationBanner />
@@ -111,24 +128,26 @@ export default function AIAssistantPage() {
 
           {/* ZONE 2: Scrollable chat */}
           <div className="flex-1 overflow-y-auto bg-[#0A0A0A] p-8 space-y-6">
-            {(messages as unknown as Array<UIMessage & { content?: string }>).map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${
-                  message.role === 'user' ? 'justify-end' : 'justify-start'
-                }`}
-              >
+            {messages.map((message: any) => {
+              const text = getMessageText(message);
+              if (!text) return null;
+              return (
                 <div
-                  className={`max-w-[75%] rounded-2xl px-6 py-4 ${
-                    message.role === 'user'
-                      ? 'bg-emerald-500/5 border border-emerald-500/10 text-emerald-100'
-                      : 'border border-zinc-800 bg-zinc-900/50 text-slate-200'
-                  }`}
+                  key={message.id}
+                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  {(message as unknown as { content?: string }).content ?? ''}
+                  <div
+                    className={`max-w-[75%] rounded-2xl px-6 py-4 whitespace-pre-wrap ${
+                      message.role === 'user'
+                        ? 'bg-emerald-500/5 border border-emerald-500/10 text-emerald-100'
+                        : 'border border-zinc-800 bg-zinc-900/50 text-slate-200'
+                    }`}
+                  >
+                    {text}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {isLoading && (
               <div className="flex justify-start">
@@ -145,23 +164,19 @@ export default function AIAssistantPage() {
           {/* ZONE 3: Pinned input — ALWAYS visible */}
           <div className="flex-shrink-0 border-t border-zinc-800 bg-[#0A0A0A] p-8">
             <form
-              onSubmit={async (event: FormEvent) => {
+              onSubmit={async (event) => {
                 event.preventDefault();
-                if (!input.trim()) return;
-                await sendMessage({ role: 'user', content: input } as unknown as UIMessage);
+                if (!input.trim() || isLoading) return;
+                await sendMessage({ role: 'user', content: input } as any);
                 setInput('');
               }}
               className="flex gap-3"
             >
               <input
                 value={input}
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  setInput(event.target.value)
-                }
+                onChange={(event) => setInput(event.target.value)}
                 placeholder={
-                  hasData
-                    ? 'Ask me anything...'
-                    : 'Connect your data first to chat...'
+                  hasData ? 'Ask me anything...' : 'Connect your data first to chat...'
                 }
                 className="flex-1 rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-3.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/30"
                 disabled={isLoading}
