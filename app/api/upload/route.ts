@@ -170,7 +170,9 @@ export async function POST(request: NextRequest) {
           .eq('upload_id', uploadRecord.id)
           .returns<{ data: Record<string, unknown> }[]>();
 
-        const allRows = (dataRows ?? []).map((r) => r.data).filter((d) => d && typeof d === 'object');
+        const allRows = (dataRows ?? [])
+          .map((r: { data: Record<string, unknown> }) => r.data)
+          .filter((d: unknown): d is Record<string, unknown> => Boolean(d) && typeof d === 'object');
         if (allRows.length === 0) return;
         const headers = Object.keys(allRows[0] ?? {});
         if (headers.length === 0) return;

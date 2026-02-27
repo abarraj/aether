@@ -30,7 +30,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [alertsCount, setAlertsCount] = useState<number>(0);
 
   const supabase = createClient();
-  const alertsDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const alertsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },

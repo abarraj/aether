@@ -223,8 +223,8 @@ export async function buildOntologyFromDetection(
       relTypeCache.set(`${rel.name}:${fromTypeId}:${toTypeId}`, relTypeId);
     }
 
-    const fromCol = detection.entityTypes.find((et) => et.slug === rel.fromTypeSlug)?.sourceColumn;
-    const toCol = detection.entityTypes.find((et) => et.slug === rel.toTypeSlug)?.sourceColumn;
+    const fromCol = detection.entityTypes.find((et) => et.slug === rel.fromTypeSlug)?.sourceColumn ?? '';
+    const toCol = detection.entityTypes.find((et) => et.slug === rel.toTypeSlug)?.sourceColumn ?? '';
     if (!fromCol || !toCol) continue;
 
     const seen = new Set<string>();

@@ -61,7 +61,7 @@ export default function AlertsPage() {
     (payload) => {
       if (payload.eventType === 'INSERT') {
         const alert = payload.new as AlertRow;
-        setAlerts((previous) => [alert, ...previous]);
+        setAlerts((previous: AlertRow[]) => [alert, ...previous]);
         toast(
           `[${alert.severity}] New alert: ${alert.title}`,
         );
@@ -70,7 +70,7 @@ export default function AlertsPage() {
   );
 
   const filteredAlerts = useMemo(() => {
-    return alerts.filter((alert) => {
+    return alerts.filter((alert: AlertRow) => {
       if (alert.is_dismissed) return false;
 
       if (severityFilter !== 'all' && alert.severity !== severityFilter) {
@@ -104,8 +104,8 @@ export default function AlertsPage() {
       .update({ is_read: true })
       .eq('id', alert.id)
       .eq('org_id', org.id);
-    setAlerts((previous) =>
-      previous.map((item) =>
+    setAlerts((previous: AlertRow[]) =>
+      previous.map((item: AlertRow) =>
         item.id === alert.id
           ? {
               ...item,
@@ -123,7 +123,7 @@ export default function AlertsPage() {
       .update({ is_dismissed: true, is_read: true })
       .eq('id', alert.id)
       .eq('org_id', org.id);
-    setAlerts((previous) => previous.filter((item) => item.id !== alert.id));
+    setAlerts((previous: AlertRow[]) => previous.filter((item: AlertRow) => item.id !== alert.id));
     try {
       void fetch('/api/audit/log', {
         method: 'POST',

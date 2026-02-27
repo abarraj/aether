@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Lock, Mail, Chrome } from 'lucide-react';
+import { Lock, Mail, Chrome, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,11 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [rememberMe, setRememberMe] = useState<boolean>(true);
+  const [showForgotPassword, setShowForgotPassword] = useState<boolean>(false);
+  const [resetEmail, setResetEmail] = useState<string>('');
+  const [resetSent, setResetSent] = useState<boolean>(false);
+  const [resetLoading, setResetLoading] = useState<boolean>(false);
   const [isPasswordLoading, setIsPasswordLoading] = useState<boolean>(false);
   const [isMagicLoading, setIsMagicLoading] = useState<boolean>(false);
   const [isOAuthLoading, setIsOAuthLoading] = useState<boolean>(false);
@@ -166,7 +171,7 @@ export default function LoginPage() {
               type="email"
               autoComplete="email"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEmail(event.target.value)}
               className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:border-emerald-500/70"
               placeholder="you@multiunitbrand.com"
             />
@@ -182,12 +187,34 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setPassword(event.target.value)}
                 className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 pr-10 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:border-emerald-500/70"
                 placeholder="Your password"
               />
               <Lock className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-slate-500" />
             </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0"
+              />
+              <span className="text-sm text-slate-400">Remember me</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setResetEmail(email);
+                setShowForgotPassword(true);
+              }}
+              className="text-xs text-slate-400 transition hover:text-emerald-400"
+            >
+              Forgot password?
+            </button>
           </div>
 
           <Button
@@ -240,6 +267,92 @@ export default function LoginPage() {
           </button>
         </div>
       </div>
+
+      {showForgotPassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/70"
+            onClick={() => {
+              setShowForgotPassword(false);
+              setResetSent(false);
+              setResetEmail('');
+            }}
+            aria-hidden
+          />
+          <div className="relative w-full max-w-sm rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-xl">
+            {!resetSent ? (
+              <>
+                <h3 className="text-lg font-semibold text-slate-100">Reset your password</h3>
+                <p className="mb-4 text-sm text-slate-400">
+                  Enter your email and we&apos;ll send you a reset link.
+                </p>
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setResetEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  className="mb-4 w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+                />
+                <Button
+                  type="button"
+                  className="mb-2 w-full rounded-2xl bg-emerald-500 text-sm font-medium text-slate-950 hover:bg-emerald-600"
+                  disabled={resetLoading}
+                  onClick={async () => {
+                    if (!resetEmail.trim()) {
+                      toast.error('Please enter your email.');
+                      return;
+                    }
+                    setResetLoading(true);
+                    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+                      redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/login` : '/login',
+                    });
+                    setResetLoading(false);
+                    if (error) {
+                      toast.error(error.message);
+                      return;
+                    }
+                    setResetSent(true);
+                  }}
+                >
+                  {resetLoading ? 'Sending…' : 'Send reset link'}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotPassword(false);
+                    setResetEmail('');
+                  }}
+                  className="text-xs text-slate-400 hover:text-slate-200"
+                >
+                  Back to login
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="mb-4 flex justify-center">
+                  <CheckCircle className="h-10 w-10 text-emerald-400" />
+                </div>
+                <h3 className="text-center text-lg font-semibold text-slate-100">Check your email</h3>
+                <p className="mb-4 text-center text-sm text-slate-400">
+                  We sent a reset link to {resetEmail}. It may take a minute.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full rounded-2xl border-zinc-700 text-sm font-medium text-slate-200 hover:bg-zinc-900"
+                  onClick={() => {
+                    setShowForgotPassword(false);
+                    setResetSent(false);
+                    setResetEmail('');
+                  }}
+                >
+                  Back to login
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 text-center text-xs text-slate-500">
         <span className="mr-1">New to Aether?</span>

@@ -135,14 +135,14 @@ export default function OnboardingPage() {
       }
     }
 
-    setStep((current) => Math.min(current + 1, 3) as Step);
+    setStep((current: number) => Math.min(current + 1, 3) as Step);
   };
 
   const goBack = () => {
     if (step === 1) {
       return;
     }
-    setStep((current) => Math.max(current - 1, 1) as Step);
+    setStep((current: number) => Math.max(current - 1, 1) as Step);
   };
 
   const handleFileCardClick = () => {
@@ -298,7 +298,7 @@ export default function OnboardingPage() {
                     id="org-name"
                     type="text"
                     value={orgName}
-                    onChange={(event) => setOrgName(event.target.value)}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setOrgName(event.target.value)}
                     className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:border-emerald-500/70"
                     placeholder="e.g. North Shore Fitness Group"
                   />
@@ -314,7 +314,7 @@ export default function OnboardingPage() {
                   <select
                     id="industry"
                     value={industry}
-                    onChange={(event) =>
+                    onChange={(event: React.ChangeEvent<HTMLSelectElement>) =>
                       setIndustry(event.target.value as IndustryOption | '')
                     }
                     className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:border-emerald-500/70"
@@ -358,7 +358,7 @@ export default function OnboardingPage() {
                     id="timezone"
                     type="text"
                     value={timezone}
-                    onChange={(event) => setTimezone(event.target.value)}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setTimezone(event.target.value)}
                     className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:border-emerald-500/70"
                     placeholder="e.g. America/New_York"
                   />
@@ -378,7 +378,7 @@ export default function OnboardingPage() {
                     id="currency-search"
                     type="text"
                     value={currencySearch}
-                    onChange={(event) => setCurrencySearch(event.target.value)}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setCurrencySearch(event.target.value)}
                     className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:border-emerald-500/60"
                     placeholder="Search currency (e.g. USD, Euro)"
                   />

@@ -81,7 +81,7 @@ export default function DashboardPage() {
   const hasSeries = (kpis?.series?.length ?? 0) > 0;
   const isEmpty = !isLoading && (!kpis || !hasSeries);
 
-  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleKpiRefresh = useCallback(() => {
     if (refreshTimeoutRef.current) {

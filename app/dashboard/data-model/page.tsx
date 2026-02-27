@@ -263,7 +263,7 @@ export default function DataModelPage() {
       .from('uploads')
       .select('id, file_name')
       .in('id', uploadIds)
-      .then(({ data }) => {
+      .then(({ data }: { data: { id: string; file_name: string }[] | null }) => {
         const map: Record<string, string> = {};
         (data ?? []).forEach((r: { id: string; file_name: string }) => {
           map[r.id] = r.file_name;

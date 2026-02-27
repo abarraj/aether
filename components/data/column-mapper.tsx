@@ -120,8 +120,8 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
       return;
     }
     const filteredColumnToProperty = Object.fromEntries(
-      Object.entries(columnToProperty).filter(([, propKey]) => propKey !== ''),
-    );
+      Object.entries(columnToProperty).filter(([, propKey]: [string, string]) => propKey !== ''),
+    ) as Record<string, string>;
     const ontology: OntologyConfig = {
       entityTypeId,
       nameColumn,
