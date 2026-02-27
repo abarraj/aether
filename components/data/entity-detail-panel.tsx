@@ -54,7 +54,7 @@ function formatValue(value: unknown, type: PropertyType): string {
     return Number.isNaN(n)
       ? String(value)
       : new Intl.NumberFormat('en-US', {
-          maximumFractionDigits: 2,
+          maximumFractionDigits: n % 1 === 0 ? 0 : 1,
         }).format(n);
   }
   return String(value);

@@ -111,6 +111,7 @@ export async function buildOntologyFromDetection(
           computed = values.reduce((a, b) => a + b, 0);
         } else if (prop.aggregation === 'average') {
           computed = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+          computed = Math.round(computed * 100) / 100;
         } else if (prop.aggregation === 'count') {
           computed = values.length;
         } else if (prop.aggregation === 'min') {

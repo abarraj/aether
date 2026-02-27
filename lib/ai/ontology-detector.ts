@@ -159,6 +159,14 @@ You think like a management consultant who's been handed a spreadsheet and needs
    - The values are proper nouns or categorical labels
    - Multiple numeric columns could be "about" this entity
 
+   When choosing aggregation methods, think about what makes business sense:
+   - Revenue, costs, sales → use 'sum' (totals make sense)
+   - Rates, percentages, ratios → use 'average' (averaging averages is usually wrong, but it's the best default)
+   - Counts of people, items, sessions → use 'sum' for totals, 'average' ONLY when the label implies per-unit measurement
+   - Class size, group size, party size → use 'average' but ONLY if the column represents individual session sizes. If it represents total attendance, use 'sum' instead.
+   - Be conservative with averages. If a column called 'attendance' has values like 30, 45, 50, those are likely per-session counts that should be SUMMED for the total, not averaged.
+   - When creating property labels, make them precise: 'Total Revenue' not just 'Revenue', 'Avg Revenue per Session' not 'Revenue Average'.
+
 2. PROPERTIES: For each entity, which numeric columns describe it? Revenue per instructor, cost per location, attendance per class type. These become aggregated properties that give each entity its business meaning.
 
 3. RELATIONSHIPS: If two entity columns appear in the same row, the entities in those columns have a relationship. An instructor column and a location column in the same row means instructors work at locations.
