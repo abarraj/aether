@@ -115,56 +115,140 @@ export default function DataPage() {
       storageFailed = true;
     }
 
-    const { error: dataRowsError } = await supabase
-      .from('data_rows')
-      .delete()
-      .eq('upload_id', id)
-      .eq('org_id', org.id);
-    if (dataRowsError) {
-      setIsDeleting(false);
-      toast.error('Failed to delete data rows. Please try again.');
-      return;
-    }
-
-    const { error: entitiesError } = await supabase
-      .from('entities')
-      .delete()
-      .eq('source_upload_id', id);
-    if (entitiesError) {
-      setIsDeleting(false);
-      toast.error('Failed to delete linked entities. Please try again.');
-      return;
-    }
-
-    const { error: uploadsError } = await supabase
-      .from('uploads')
-      .delete()
-      .eq('id', id)
-      .eq('org_id', org.id);
-    if (uploadsError) {
-      setIsDeleting(false);
-      toast.error('Failed to remove file. Please try again.');
-      return;
-    }
+    const errors: string[] = [];
+    let uploadDeleted = false;
 
     try {
-      await fetch('/api/audit/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'data.delete',
-          targetType: 'upload',
-          targetId: id,
-          description: `Deleted data source: ${file_name}`,
-        }),
-      });
-    } catch {
-      // non-blocking
+      // 1. Get entity IDs that belong to this upload (before we delete entities)
+      const { data: entitiesToDelete } = await supabase
+        .from('entities')
+        .select('id')
+        .eq('source_upload_id', id);
+      const entityIds: string[] = (entitiesToDelete ?? []).map((e) => e.id);
+
+      // 2. Delete entity_relationships where either endpoint is one of these entities
+      if (entityIds.length > 0) {
+        const { error: relFromErr } = await supabase
+          .from('entity_relationships')
+          .delete()
+          .eq('org_id', org.id)
+          .in('from_entity_id', entityIds);
+        if (relFromErr) errors.push('entity relationships (from)');
+        const { error: relToErr } = await supabase
+          .from('entity_relationships')
+          .delete()
+          .eq('org_id', org.id)
+          .in('to_entity_id', entityIds);
+        if (relToErr) errors.push('entity relationships (to)');
+      }
+
+      // 3. Delete data_rows for this upload
+      const { error: dataRowsError } = await supabase
+        .from('data_rows')
+        .delete()
+        .eq('upload_id', id)
+        .eq('org_id', org.id);
+      if (dataRowsError) errors.push('data rows');
+
+      // 4. Delete entities for this upload
+      const { error: entitiesError } = await supabase
+        .from('entities')
+        .delete()
+        .eq('source_upload_id', id);
+      if (entitiesError) errors.push('entities');
+
+      // 5. Delete ALL kpi_snapshots for the org (recomputed from remaining uploads if any)
+      const { error: snapshotsError } = await supabase
+        .from('kpi_snapshots')
+        .delete()
+        .eq('org_id', org.id);
+      if (snapshotsError) errors.push('KPI snapshots');
+
+      // 6. Orphan cleanup: delete relationship_types that have no remaining entity_relationships
+      const { data: usedRelTypeIds } = await supabase
+        .from('entity_relationships')
+        .select('relationship_type_id')
+        .eq('org_id', org.id);
+      const usedRelTypeIdSet = new Set(
+        (usedRelTypeIds ?? []).map((r) => r.relationship_type_id),
+      );
+      const { data: allRelTypes } = await supabase
+        .from('relationship_types')
+        .select('id')
+        .eq('org_id', org.id);
+      for (const rt of allRelTypes ?? []) {
+        if (!usedRelTypeIdSet.has(rt.id)) {
+          const { error: rtErr } = await supabase
+            .from('relationship_types')
+            .delete()
+            .eq('id', rt.id)
+            .eq('org_id', org.id);
+          if (rtErr) errors.push('orphan relationship types');
+        }
+      }
+
+      // 7. Orphan cleanup: delete entity_types that have no remaining entities
+      const { data: usedEntityTypeIds } = await supabase
+        .from('entities')
+        .select('entity_type_id')
+        .eq('org_id', org.id);
+      const usedEntityTypeIdSet = new Set(
+        (usedEntityTypeIds ?? []).map((e) => e.entity_type_id),
+      );
+      const { data: allEntityTypes } = await supabase
+        .from('entity_types')
+        .select('id')
+        .eq('org_id', org.id);
+      for (const et of allEntityTypes ?? []) {
+        if (!usedEntityTypeIdSet.has(et.id)) {
+          const { error: etErr } = await supabase
+            .from('entity_types')
+            .delete()
+            .eq('id', et.id)
+            .eq('org_id', org.id);
+          if (etErr) errors.push('orphan entity types');
+        }
+      }
+
+      // 8. Finally delete the upload record
+      const { error: uploadsError } = await supabase
+        .from('uploads')
+        .delete()
+        .eq('id', id)
+        .eq('org_id', org.id);
+      if (uploadsError) {
+        errors.push('upload record');
+      } else {
+        uploadDeleted = true;
+      }
+    } catch (e) {
+      errors.push(String(e));
     }
 
-    toast.success('Data file removed');
-    setUploadToDelete(null);
-    setConfirmFilename('');
+    if (errors.length > 0) {
+      toast.error(
+        `Cleanup had issues: ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? '…' : ''}. Some data may remain.`,
+      );
+    }
+    if (uploadDeleted) {
+      try {
+        await fetch('/api/audit/log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'data.delete',
+            targetType: 'upload',
+            targetId: id,
+            description: `Deleted data source: ${file_name}`,
+          }),
+        });
+      } catch {
+        // non-blocking
+      }
+      toast.success('Data file removed');
+      setUploadToDelete(null);
+      setConfirmFilename('');
+    }
     setIsDeleting(false);
     await refreshUploads();
   };
