@@ -44,8 +44,20 @@ export async function GET() {
     }
 
     const orgId = profile.org_id;
-    const now = new Date();
-    const weekStart = startOfISOWeek(now).toISOString().slice(0, 10);
+
+    // Get the most recent week that has gap data (not necessarily current week)
+    const { data: latestWeek } = await supabase
+      .from('performance_gaps')
+      .select('period_start')
+      .eq('org_id', orgId)
+      .eq('period', 'weekly')
+      .order('period_start', { ascending: false })
+      .limit(1)
+      .maybeSingle<{ period_start: string }>();
+
+    const weekStart =
+      latestWeek?.period_start ??
+      startOfISOWeek(new Date()).toISOString().slice(0, 10);
 
     const { data: rows, error: rowsError } = await supabase
       .from('performance_gaps')

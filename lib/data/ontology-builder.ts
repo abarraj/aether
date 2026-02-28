@@ -50,6 +50,14 @@ export async function buildOntologyFromDetection(
 
     if (existing) {
       slugToTypeId.set(et.slug, existing.id);
+      // Update source_column if not set
+      if (et.sourceColumn) {
+        await supabase
+          .from('entity_types')
+          .update({ source_column: et.sourceColumn })
+          .eq('id', existing.id)
+          .is('source_column', null);
+      }
       continue;
     }
 
@@ -62,6 +70,7 @@ export async function buildOntologyFromDetection(
         icon: et.icon,
         color: et.color,
         properties: toEntityProperties(et.aggregatedProperties),
+        source_column: et.sourceColumn,
       })
       .select('id')
       .single<{ id: string }>();

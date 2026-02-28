@@ -114,15 +114,9 @@ export async function POST(request: Request) {
       messages,
     });
 
-    // Try the methods that exist in this version of the SDK.
-    // In ai v6, the correct method for useChat consumption is
-    // toUIMessageStreamResponse (preferred) or toTextStreamResponse.
-    // @ts-ignore — method availability varies by exact patch version
-    if (typeof result.toUIMessageStreamResponse === 'function') {
-      // @ts-ignore
-      return result.toUIMessageStreamResponse();
+    if (typeof result.toDataStreamResponse === 'function') {
+      return result.toDataStreamResponse();
     }
-
     return result.toTextStreamResponse();
   } catch (error) {
     console.error('CHAT_ERROR:', error);

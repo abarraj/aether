@@ -362,6 +362,82 @@ export async function buildDataContext(orgId: string): Promise<string> {
     lines.push(rawDataBlock);
   }
 
+  // Add performance gap context
+  try {
+    const { data: gapRows } = await supabase
+      .from('performance_gaps')
+      .select(
+        'dimension_field, dimension_value, actual_value, expected_value, gap_value, gap_pct, period_start',
+      )
+      .eq('org_id', orgId)
+      .eq('period', 'weekly')
+      .order('period_start', { ascending: false })
+      .limit(50);
+
+    if (gapRows && gapRows.length > 0) {
+      lines.push('');
+      lines.push('---');
+      lines.push(
+        'PERFORMANCE GAPS (Revenue leakage by dimension, most recent weeks)',
+      );
+      lines.push(
+        'Gap = Expected - Actual. Positive gap means revenue left on the table.',
+      );
+      lines.push('');
+
+      const byField = new Map<string, typeof gapRows>();
+      for (const row of gapRows) {
+        const field = row.dimension_field;
+        if (!byField.has(field)) byField.set(field, []);
+        byField.get(field)!.push(row);
+      }
+
+      for (const [field, fieldRows] of byField) {
+        lines.push(`Dimension: ${field}`);
+        const byValue = new Map<
+          string,
+          {
+            totalActual: number;
+            totalExpected: number;
+            totalGap: number;
+            weeks: number;
+          }
+        >();
+        for (const row of fieldRows) {
+          const v = row.dimension_value;
+          const existing = byValue.get(v) ?? {
+            totalActual: 0,
+            totalExpected: 0,
+            totalGap: 0,
+            weeks: 0,
+          };
+          existing.totalActual += Number(row.actual_value);
+          existing.totalExpected += Number(row.expected_value);
+          existing.totalGap += Number(row.gap_value);
+          existing.weeks++;
+          byValue.set(v, existing);
+        }
+
+        const sorted = Array.from(byValue.entries()).sort(
+          (a, b) => b[1].totalGap - a[1].totalGap,
+        );
+        for (const [value, stats] of sorted) {
+          const avgGapPct =
+            stats.totalExpected > 0
+              ? ((stats.totalGap / stats.totalExpected) * 100).toFixed(1)
+              : 'N/A';
+          lines.push(
+            `  - ${value}: actual=${Math.round(stats.totalActual)}, expected=${Math.round(stats.totalExpected)}, gap=${Math.round(stats.totalGap)} (${avgGapPct}% leakage over ${stats.weeks} weeks)`,
+          );
+        }
+        lines.push('');
+      }
+      lines.push('---');
+    }
+  } catch {
+    // performance_gaps table may not exist yet
+  }
+
   // Fetch industry benchmarks for AI context
   const { data: org } = await supabase
     .from('organizations')
