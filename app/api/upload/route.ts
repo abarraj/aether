@@ -143,22 +143,33 @@ export async function POST(request: NextRequest) {
     if (rowCount > 0) {
       const dateHeader = Object.entries(columnMapping).find(([, role]) => role === 'date')?.[0] ?? null;
 
-      const normalizeDate = (raw: string | undefined): string | null => {
-        if (raw == null || String(raw).trim() === '') return null;
-        const d = new Date(String(raw).trim());
+      const normalizeDate = (raw: unknown): string | null => {
+        if (raw === null || raw === undefined) return null;
+        const s = String(raw).trim();
+        if (!s) return null;
+        const d = new Date(s);
         if (Number.isNaN(d.getTime())) return null;
         return d.toISOString().slice(0, 10);
       };
 
+      const fallbackDateFromRow = (row: Record<string, string>): unknown => {
+        const dateLikeKey = Object.keys(row).find(
+          (k) => /date|time/i.test(k),
+        );
+        return dateLikeKey ? row[dateLikeKey] : null;
+      };
+
       const rowsToInsert = rows.map((row) => {
-        const rawDate = dateHeader ? (row[dateHeader] ?? null) : null;
-        const normalizedDate = rawDate != null ? normalizeDate(String(rawDate)) : null;
+        const raw =
+          (dateHeader ? (row[dateHeader] ?? null) : null) ??
+          fallbackDateFromRow(row);
+        const normalized = normalizeDate(raw);
         return {
           org_id: orgId,
           upload_id: uploadRecord.id,
           data_type: dataType,
           data: row,
-          date: normalizedDate,
+          date: normalized,
         };
       });
 

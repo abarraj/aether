@@ -30,22 +30,13 @@ type MetricAccumulator = Record<string, SnapshotMetric>;
 
 function parseNumeric(value: unknown): number | null {
   if (value === null || value === undefined) return null;
-
-  if (typeof value === 'number' && !Number.isNaN(value)) {
-    return value;
-  }
-
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
-    const cleaned = value
-      .replace(/[$,]/g, '') // remove currency symbols and commas
-      .trim();
-
+    const cleaned = value.replace(/[$,]/g, '').trim();
     if (!cleaned) return null;
-
-    const parsed = Number(cleaned);
-    return Number.isFinite(parsed) ? parsed : null;
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
   }
-
   return null;
 }
 
@@ -304,9 +295,10 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
 
   if (!upsertRows.length) {
     console.log('KPI generation produced no rows', {
-      uploadId,
       orgId,
+      uploadId,
       hasMapping: Boolean(upload.column_mapping),
+      sampleRowDate: rows[0]?.date ?? null,
     });
     return;
   }
