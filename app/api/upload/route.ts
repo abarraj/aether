@@ -9,6 +9,7 @@ import { canAddDataSource } from '@/lib/billing/queries';
 import { logAuditEvent } from '@/lib/audit';
 import { extractEntities, type OntologyMapping } from '@/lib/data/ontology-extractor';
 import { processUploadData } from '@/lib/data/processor';
+import { computePerformanceGaps } from '@/lib/data/performance-gaps';
 import { detectOntology } from '@/lib/ai/ontology-detector';
 import { buildOntologyFromDetection } from '@/lib/data/ontology-builder';
 
@@ -186,6 +187,12 @@ export async function POST(request: NextRequest) {
     }
 
     await processUploadData(orgId, uploadRecord.id);
+
+    try {
+      await computePerformanceGaps(orgId, uploadRecord.id);
+    } catch (gapErr) {
+      console.error('Performance gap computation failed:', gapErr);
+    }
 
     const ipHeader = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
     const ipAddress = ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
