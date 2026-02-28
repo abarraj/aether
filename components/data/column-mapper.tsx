@@ -75,16 +75,15 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
   const { entityTypes, createEntityType } = useOntology();
   const [step, setStep] = useState<1 | 2>(1);
   const [dataType, setDataType] = useState<DataType>('Custom');
-  const [mapping, setMapping] = useState<Record<string, ColumnRole>>(() => {
+  const suggestedMapping = useMemo(() => {
     const hasWeekStart = headers.some((h) => {
       const n = h.toLowerCase().trim().replace(/\s+/g, ' ');
       return n.includes('week_start') || n === 'week_start' || n.includes('week start');
     });
-    return headers.reduce<Record<string, ColumnRole>>((acc, header) => {
-      const lower = header.toLowerCase().trim();
-      const normalized = lower.replace(/\s+/g, ' ');
+    return headers.reduce((acc, header) => {
+      const h = header.toLowerCase().trim();
+      const normalized = h.replace(/\s+/g, ' ');
 
-      // Date: week_start (prefer), period_start, start_date, date_start, week+start, week_end (if no week_start), generic date
       if (normalized.includes('week_start') || normalized === 'week_start' || normalized.includes('week start'))
         acc[header] = 'date';
       else if (
@@ -94,42 +93,53 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
         (normalized.includes('week') && normalized.includes('start'))
       )
         acc[header] = 'date';
-      else if (normalized.includes('week_end') && !hasWeekStart) acc[header] = 'date';
-      else if (lower.includes('date')) acc[header] = 'date';
-      else if (lower.includes('rev')) acc[header] = 'revenue';
-      else if (lower.includes('cost')) acc[header] = 'cost';
-      else if (lower.includes('labor')) acc[header] = 'labor_hours';
-      else if (lower.includes('attend') || lower.includes('check')) acc[header] = 'attendance';
+      else if (normalized.includes('week_end') && !hasWeekStart)
+        acc[header] = 'date';
+      else if (h.includes('date'))
+        acc[header] = 'date';
+      else if (h.includes('rev'))
+        acc[header] = 'revenue';
+      else if (h.includes('cost'))
+        acc[header] = 'cost';
+      else if (h.includes('labor'))
+        acc[header] = 'labor_hours';
+      else if (h.includes('attend') || h.includes('check'))
+        acc[header] = 'attendance';
       else if (
-        lower.includes('target') ||
-        lower.includes('quota') ||
-        lower.includes('expected') ||
-        lower.includes('capacity') ||
-        lower.includes('potential') ||
-        lower.includes('max')
+        h.includes('target') ||
+        h.includes('quota') ||
+        h.includes('expected') ||
+        h.includes('capacity') ||
+        h.includes('potential') ||
+        h.includes('max')
       )
         acc[header] = 'expected';
       else if (
-        lower.includes('instructor') ||
-        lower.includes('coach') ||
-        lower.includes('trainer') ||
-        lower.includes('staff') ||
-        lower.includes('rep') ||
-        lower.includes('sales') ||
-        lower.includes('region') ||
-        lower.includes('territory') ||
-        lower.includes('location') ||
-        lower.includes('outlet') ||
-        lower.includes('store') ||
-        lower.includes('team')
+        h.includes('instructor') ||
+        h.includes('coach') ||
+        h.includes('trainer') ||
+        h.includes('staff') ||
+        h.includes('rep') ||
+        h.includes('sales') ||
+        h.includes('region') ||
+        h.includes('territory') ||
+        h.includes('location') ||
+        h.includes('outlet') ||
+        h.includes('store') ||
+        h.includes('team')
       )
         acc[header] = 'dimension';
-      else if (lower.includes('site')) acc[header] = 'location';
-      else if (lower.includes('name') || lower.includes('member')) acc[header] = 'name';
-      else acc[header] = 'custom';
+      else if (h.includes('site'))
+        acc[header] = 'location';
+      else if (h.includes('name') || h.includes('member'))
+        acc[header] = 'name';
+      else
+        acc[header] = 'custom';
       return acc;
-    }, {}),
-  );
+    }, {} as Record<string, ColumnRole>);
+  }, [headers]);
+
+  const [mapping, setMapping] = useState<Record<string, ColumnRole>>(suggestedMapping);
 
   // Step 2: Map to your business
   const [validationError, setValidationError] = useState<string | null>(null);
