@@ -24,6 +24,23 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file');
     const dataTypeRaw = formData.get('data_type');
     const dataType = typeof dataTypeRaw === 'string' && dataTypeRaw.length > 0 ? dataTypeRaw : 'custom';
+    const columnMappingRaw = formData.get('column_mapping');
+    let columnMapping: Record<string, string> = {};
+    if (typeof columnMappingRaw === 'string' && columnMappingRaw.length > 0) {
+      try {
+        const parsed = JSON.parse(columnMappingRaw) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          columnMapping = Object.fromEntries(
+            Object.entries(parsed).filter(
+              (entry): entry is [string, string] =>
+                typeof entry[0] === 'string' && typeof entry[1] === 'string',
+            ),
+          );
+        }
+      } catch {
+        // ignore invalid column_mapping
+      }
+    }
     const ontologyRaw = formData.get('ontology');
     let ontology: OntologyMapping | null = null;
     if (typeof ontologyRaw === 'string' && ontologyRaw.length > 0) {
@@ -108,6 +125,7 @@ export async function POST(request: NextRequest) {
         file_path: objectPath,
         file_size: file.size,
         data_type: dataType,
+        column_mapping: columnMapping,
         status: 'processing',
       })
       .select('id')
@@ -122,13 +140,26 @@ export async function POST(request: NextRequest) {
     const rowCount = rows.length;
 
     if (rowCount > 0) {
-      const rowsToInsert = rows.map((row) => ({
-        org_id: orgId,
-        upload_id: uploadRecord.id,
-        data_type: dataType,
-        data: row,
-        date: row.date && row.date.length > 0 ? row.date : null,
-      }));
+      const dateHeader = Object.entries(columnMapping).find(([, role]) => role === 'date')?.[0] ?? null;
+
+      const normalizeDate = (raw: string | undefined): string | null => {
+        if (raw == null || String(raw).trim() === '') return null;
+        const d = new Date(String(raw).trim());
+        if (Number.isNaN(d.getTime())) return null;
+        return d.toISOString().slice(0, 10);
+      };
+
+      const rowsToInsert = rows.map((row) => {
+        const rawDate = dateHeader ? (row[dateHeader] ?? null) : null;
+        const normalizedDate = rawDate != null ? normalizeDate(String(rawDate)) : null;
+        return {
+          org_id: orgId,
+          upload_id: uploadRecord.id,
+          data_type: dataType,
+          data: row,
+          date: normalizedDate,
+        };
+      });
 
       const { error: rowsError } = await supabase.from('data_rows').insert(rowsToInsert);
 

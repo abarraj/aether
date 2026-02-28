@@ -153,7 +153,11 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
   };
 
   const runUpload = useCallback(
-    async (dataType: DataType, ontology: OntologyConfig | null | undefined) => {
+    async (
+      dataType: DataType,
+      mapping: Record<string, unknown> | null,
+      ontology: OntologyConfig | null | undefined,
+    ) => {
       if (!file) return;
 
       setIsUploading(true);
@@ -162,6 +166,9 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
       const formData = new FormData();
       formData.append('file', file);
       formData.append('data_type', dataType);
+      if (mapping != null) {
+        formData.append('column_mapping', JSON.stringify(mapping));
+      }
       if (ontology?.entityTypeId && ontology?.nameColumn) {
         formData.append('ontology', JSON.stringify(ontology));
       }
@@ -206,13 +213,13 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
       mapping: Record<string, unknown>;
       ontology?: OntologyConfig | null;
     }) => {
-      void runUpload(payload.dataType, payload.ontology ?? null);
+      void runUpload(payload.dataType, payload.mapping, payload.ontology ?? null);
     },
     [runUpload],
   );
 
   const handleUploadSimple = useCallback(() => {
-    void runUpload('Custom', null);
+    void runUpload('Custom', null, null);
   }, [runUpload]);
 
   if (!open) return null;
@@ -326,7 +333,7 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
                 type="button"
                 disabled={isUploading}
                 className="w-full rounded-2xl bg-emerald-500 py-3 text-sm font-medium text-slate-950 hover:bg-emerald-600"
-                onClick={() => { setStep('importing'); void runUpload('Custom', null); }}
+                onClick={() => { setStep('importing'); void runUpload('Custom', null, null); }}
               >
                 {isUploading ? 'Importing…' : 'Looks good — import this'}
               </Button>
