@@ -47,9 +47,9 @@ export default function AIAssistantPage() {
   const { kpis } = useKpis(initial.period, initial.range, 0, orgIds);
   const hasData = (kpis?.series?.length ?? 0) > 0;
 
-  const { messages, status, sendMessage } = useChat({
+  const { messages, status, append } = useChat({
     api: '/api/chat',
-  } as any);
+  });
 
   const [input, setInput] = useState<string>('');
   const isLoading = status === 'streaming' || status === 'submitted';
@@ -69,7 +69,7 @@ export default function AIAssistantPage() {
 
   const handleSuggestedClick = async (prompt: string) => {
     setInput('');
-    await sendMessage({ role: 'user', content: prompt } as any);
+    await append({ role: 'user', content: prompt });
   };
 
   const greetingName = profile?.full_name?.split(' ')[0] ?? 'Operator';
@@ -170,7 +170,7 @@ export default function AIAssistantPage() {
               onSubmit={async (event) => {
                 event.preventDefault();
                 if (!input.trim() || isLoading) return;
-                await sendMessage({ role: 'user', content: input } as any);
+                await append({ role: 'user', content: input });
                 setInput('');
               }}
               className="flex gap-3"
