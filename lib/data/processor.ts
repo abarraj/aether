@@ -29,6 +29,10 @@ interface SnapshotMetric {
 
 type MetricAccumulator = Record<string, SnapshotMetric>;
 
+function normKey(v: string): string {
+  return v.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 function parseNumeric(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -49,6 +53,62 @@ function toDateKey(raw: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+function getMappedHeader(mapping: Record<string, string> | null, role: string): string | null {
+  if (!mapping) return null;
+  for (const [header, r] of Object.entries(mapping)) {
+    if (r === role) return header;
+  }
+  return null;
+}
+
+function getValueByHeaderNormalized(record: Record<string, unknown>, header: string | null): unknown {
+  if (!header) return null;
+  const target = normKey(header);
+  for (const k of Object.keys(record)) {
+    if (normKey(k) === target) return record[k];
+  }
+  return null;
+}
+
+function findFallbackDateValue(record: Record<string, unknown>): unknown {
+  const keys = Object.keys(record);
+  const priority = [
+    'week_start',
+    'week start',
+    'period_start',
+    'period start',
+    'start_date',
+    'start date',
+    'date',
+    'time',
+    'timestamp',
+  ];
+
+  for (const want of priority) {
+    const match = keys.find((k) => normKey(k) === want);
+    if (match) return record[match];
+  }
+
+  const loose = keys.find((k) => {
+    const nk = normKey(k);
+    return (
+      nk.includes('week_start') ||
+      nk.includes('period_start') ||
+      nk.includes('start_date') ||
+      nk.includes('date') ||
+      nk.includes('time')
+    );
+  });
+  return loose ? record[loose] : null;
+}
+
+function normalizeToISODate(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  const d = new Date(String(raw));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
 }
 
 export async function processUploadData(orgId: string, uploadId: string): Promise<void> {
@@ -197,35 +257,20 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
 
   function extractFromMapping(
     record: Record<string, unknown>,
-    mapping: Record<string, string>,
+    mapping: Record<string, string> | null,
   ): SnapshotMetric {
+    if (!mapping) return {};
     const metrics: SnapshotMetric = {};
 
     for (const [header, role] of Object.entries(mapping)) {
-      const rawValue = record[header];
-      const numeric = parseNumeric(rawValue);
-      if (numeric === null) continue;
+      const n = parseNumeric(getValueByHeaderNormalized(record, header));
+      if (n === null) continue;
 
-      switch (role) {
-        case 'revenue':
-          metrics.revenue = (metrics.revenue ?? 0) + numeric;
-          break;
-
-        case 'cost':
-          metrics.laborCost = (metrics.laborCost ?? 0) + numeric;
-          break;
-
-        case 'labor_hours':
-          metrics.laborHours = (metrics.laborHours ?? 0) + numeric;
-          break;
-
-        case 'attendance':
-          metrics.attendance = (metrics.attendance ?? 0) + numeric;
-          break;
-
-        default:
-          break;
-      }
+      if (role === 'revenue') metrics.revenue = (metrics.revenue ?? 0) + n;
+      if (role === 'cost') metrics.laborCost = (metrics.laborCost ?? 0) + n;
+      if (role === 'labor_hours') metrics.laborHours = (metrics.laborHours ?? 0) + n;
+      if (role === 'attendance') metrics.attendance = (metrics.attendance ?? 0) + n;
+      if (role === 'utilization') metrics.utilization = (metrics.utilization ?? 0) + n;
     }
 
     return metrics;
@@ -241,37 +286,33 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     );
   }
 
+  const mapping = normalizeColumnMapping(upload.column_mapping);
+  const mappedDateHeader = getMappedHeader(mapping, 'date');
+
   for (const row of rows) {
-    const baseDateKey = toDateKey(row.date);
+    const record = row.data as Record<string, unknown>;
+
+    // Prefer stored row.date; if missing, derive from mapping/fallbacks
+    const isoFromRow = row.date ? toDateKey(row.date) : null;
+    const rawDerived =
+      getValueByHeaderNormalized(record, mappedDateHeader) ?? findFallbackDateValue(record);
+    const isoDerived = !isoFromRow ? normalizeToISODate(rawDerived) : null;
+
+    const baseDateKey = toDateKey(isoFromRow ?? isoDerived);
     if (!baseDateKey) continue;
 
     const parsedDate = parseISO(baseDateKey);
     const weekKey = formatISO(startOfISOWeek(parsedDate), { representation: 'date' });
     const monthKey = formatISO(startOfMonth(parsedDate), { representation: 'date' });
 
-    const record = row.data as Record<string, unknown>;
     const dataType = upload.data_type.toLowerCase();
 
-    let metrics: SnapshotMetric = {};
+    // 1) mapping-based metrics first
+    let metrics: SnapshotMetric = extractFromMapping(record, mapping);
 
-    const mapping = normalizeColumnMapping(upload.column_mapping);
-
-    if (
-      Object.keys(mapping).length > 0 &&
-      Object.values(mapping).some((role) =>
-        ['revenue', 'cost', 'labor_hours', 'attendance'].includes(role),
-      )
-    ) {
-      metrics = extractFromMapping(record, mapping);
-    }
-
-    if (!Object.keys(metrics).length) {
-      metrics = extractUniversal(record);
-    }
-
-    if (!Object.keys(metrics).length) {
-      metrics = extractByDataType(record, dataType);
-    }
+    // 2) heuristic fallback
+    if (!hasAny(metrics)) metrics = extractUniversal(record);
+    if (!hasAny(metrics)) metrics = extractByDataType(record, dataType);
 
     if (!hasAny(metrics)) continue;
 
@@ -294,11 +335,13 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     ...buildRows('monthly', monthlyMetrics),
   ];
 
-  if (!upsertRows.length) {
-    console.log('KPI generation produced no rows', {
+  if (upsertRows.length === 0) {
+    console.log('processUploadData: produced no KPI snapshots', {
       orgId,
       uploadId,
       hasMapping: Boolean(upload.column_mapping),
+      mappedDateHeader,
+      sampleRowKeys: rows[0] ? Object.keys(rows[0].data ?? {}).slice(0, 12) : [],
       sampleRowDate: rows[0]?.date ?? null,
     });
     return;
