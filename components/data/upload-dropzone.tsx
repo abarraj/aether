@@ -258,7 +258,7 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
               {step === 'confirm' ? 'Confirm import' : step === 'analyzing' ? 'Analyzing…' : 'Add data'}
             </h2>
             <p className="text-xs text-slate-500">
-              {step === 'analyzing' ? 'We’ll detect your columns and categories.' : 'Spreadsheet up to 10MB.'}
+              {step === 'analyzing' ? 'We’ll detect your columns and categories.' : 'Spreadsheet up to 50MB.'}
             </p>
           </div>
           <button
@@ -281,7 +281,7 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
             <UploadCloud className="mb-3 h-8 w-8 text-emerald-400" />
             <p className="text-sm font-medium text-slate-100">Drop your spreadsheet here, or click to choose a file</p>
             <p className="mt-1 text-xs text-slate-500">Excel (.xlsx) and CSV files supported</p>
-            <p className="mt-2 text-[11px] text-slate-500">Max 10MB</p>
+            <p className="mt-2 text-[11px] text-slate-500">Max 50MB</p>
           </div>
         ) : step === 'analyzing' ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 px-8 py-16">
@@ -333,7 +333,25 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
                 type="button"
                 disabled={isUploading}
                 className="w-full rounded-2xl bg-emerald-500 py-3 text-sm font-medium text-slate-950 hover:bg-emerald-600"
-                onClick={() => { setStep('importing'); void runUpload('Custom', null, null); }}
+                onClick={() => {
+                setStep('importing');
+                // Build column mapping from detection results
+                const autoMapping: Record<string, string> = {};
+                if (detection?.metrics?.dateColumn) {
+                  autoMapping[detection.metrics.dateColumn] = 'date';
+                }
+                if (detection?.metrics?.revenueColumns?.[0]) {
+                  autoMapping[detection.metrics.revenueColumns[0]] = 'revenue';
+                }
+                if (detection?.metrics?.costColumns?.[0]) {
+                  autoMapping[detection.metrics.costColumns[0]] = 'cost';
+                }
+                if (detection?.metrics?.attendanceColumns?.[0]) {
+                  autoMapping[detection.metrics.attendanceColumns[0]] = 'attendance';
+                }
+                const hasMapping = Object.keys(autoMapping).length > 0;
+                void runUpload('Custom', hasMapping ? autoMapping : null, null);
+              }}
               >
                 {isUploading ? 'Importing…' : 'Looks good — import this'}
               </Button>

@@ -63,9 +63,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File is required.' }, { status: 400 });
     }
 
-    const maxBytes = 10 * 1024 * 1024;
+    const maxBytes = 50 * 1024 * 1024;
     if (file.size > maxBytes) {
-      return NextResponse.json({ error: 'File size exceeds 10MB limit.' }, { status: 400 });
+      return NextResponse.json({ error: 'File size exceeds 50MB limit.' }, { status: 400 });
     }
 
     const {

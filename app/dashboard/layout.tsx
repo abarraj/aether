@@ -208,14 +208,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Topbar
-          plan={effectiveOrg?.plan ?? 'starter'}
-          userName={displayUserName}
-          onSignOut={handleSignOut}
-          alertsCount={alertsCount}
-          title={topbarLabel}
-        />
-        <main className="flex-1 overflow-auto p-8">{children}</main>
+        <div className="relative z-50">
+          <Topbar
+            plan={effectiveOrg?.plan ?? 'starter'}
+            userName={displayUserName}
+            onSignOut={handleSignOut}
+            alertsCount={alertsCount}
+            title={topbarLabel}
+          />
+        </div>
+        <main className="relative z-0 flex-1 overflow-auto p-8">{children}</main>
       </div>
     </div>
   );

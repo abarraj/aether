@@ -14,7 +14,6 @@ type UploadRow = {
   id: string;
   org_id: string;
   data_type: string;
-  column_mapping: Record<string, string> | null;
 };
 
 type Period = 'daily' | 'weekly' | 'monthly';
@@ -116,13 +115,25 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
 
   const { data: upload, error: uploadError } = await supabase
     .from('uploads')
-    .select('id, org_id, data_type, column_mapping')
+    .select('id, org_id, data_type')
     .eq('id', uploadId)
     .eq('org_id', orgId)
     .maybeSingle<UploadRow>();
 
   if (uploadError || !upload) {
     return;
+  }
+
+  let columnMapping: Record<string, string> | null = null;
+  try {
+    const { data: mappingRow } = await supabase
+      .from('uploads')
+      .select('column_mapping')
+      .eq('id', uploadId)
+      .maybeSingle<{ column_mapping: Record<string, string> | null }>();
+    columnMapping = mappingRow?.column_mapping ?? null;
+  } catch {
+    // column_mapping column may not exist yet — proceed without it
   }
 
   const { data: rows, error: rowsError } = await supabase
@@ -286,7 +297,7 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     );
   }
 
-  const mapping = normalizeColumnMapping(upload.column_mapping);
+  const mapping = normalizeColumnMapping(columnMapping);
   const mappedDateHeader = getMappedHeader(mapping, 'date');
 
   for (const row of rows) {
@@ -339,7 +350,7 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     console.log('processUploadData: produced no KPI snapshots', {
       orgId,
       uploadId,
-      hasMapping: Boolean(upload.column_mapping),
+      hasMapping: Boolean(columnMapping),
       mappedDateHeader,
       sampleRowKeys: rows[0] ? Object.keys(rows[0].data ?? {}).slice(0, 12) : [],
       sampleRowDate: rows[0]?.date ?? null,

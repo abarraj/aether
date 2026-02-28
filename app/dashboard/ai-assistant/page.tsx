@@ -3,7 +3,7 @@
 // AI Assistant chat experience within the Aether dashboard.
 
 import { useEffect, useRef, useState } from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { useChat } from '@ai-sdk/react';
 
 import { useKpis } from '@/hooks/use-kpis';
@@ -152,8 +152,11 @@ export default function AIAssistantPage() {
             {isLoading && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 px-6 py-4 text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Thinking about your business…
+                  <div className="relative flex items-center justify-center h-6 w-6">
+                    <div className="absolute inset-0 rounded-lg bg-emerald-500/20 animate-ping" />
+                    <div className="relative h-4 w-4 rounded-md bg-emerald-500 animate-pulse" />
+                  </div>
+                  <span className="text-slate-300">Thinking about your business…</span>
                 </div>
               </div>
             )}
