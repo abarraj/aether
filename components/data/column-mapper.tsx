@@ -4,6 +4,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Link2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { useOntology } from '@/hooks/use-ontology';
@@ -16,6 +17,8 @@ export type ColumnRole =
   | 'cost'
   | 'labor_hours'
   | 'attendance'
+  | 'expected'
+  | 'dimension'
   | 'category'
   | 'location'
   | 'name'
@@ -49,6 +52,8 @@ const columnRoles: { value: ColumnRole; label: string }[] = [
   { value: 'cost', label: 'Cost' },
   { value: 'labor_hours', label: 'Labor hours' },
   { value: 'attendance', label: 'Attendance' },
+  { value: 'expected', label: 'Expected (Target/Capacity/Quota)' },
+  { value: 'dimension', label: 'Dimension (Group by)' },
   { value: 'category', label: 'Category' },
   { value: 'location', label: 'Location' },
   { value: 'name', label: 'Name' },
@@ -78,7 +83,31 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
       else if (lower.includes('cost')) acc[header] = 'cost';
       else if (lower.includes('labor')) acc[header] = 'labor_hours';
       else if (lower.includes('attend') || lower.includes('check')) acc[header] = 'attendance';
-      else if (lower.includes('location') || lower.includes('site')) acc[header] = 'location';
+      else if (
+        lower.includes('target') ||
+        lower.includes('quota') ||
+        lower.includes('expected') ||
+        lower.includes('capacity') ||
+        lower.includes('potential') ||
+        lower.includes('max')
+      )
+        acc[header] = 'expected';
+      else if (
+        lower.includes('instructor') ||
+        lower.includes('coach') ||
+        lower.includes('trainer') ||
+        lower.includes('staff') ||
+        lower.includes('rep') ||
+        lower.includes('sales') ||
+        lower.includes('region') ||
+        lower.includes('territory') ||
+        lower.includes('location') ||
+        lower.includes('outlet') ||
+        lower.includes('store') ||
+        lower.includes('team')
+      )
+        acc[header] = 'dimension';
+      else if (lower.includes('site')) acc[header] = 'location';
       else if (lower.includes('name') || lower.includes('member')) acc[header] = 'name';
       else acc[header] = 'custom';
       return acc;
@@ -86,6 +115,7 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
   );
 
   // Step 2: Map to your business
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [enableOntology, setEnableOntology] = useState(false);
   const [entityTypeId, setEntityTypeId] = useState('');
   const [newEntityTypeName, setNewEntityTypeName] = useState('');
@@ -108,13 +138,48 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
 
   const handleChangeRole = (header: string, role: ColumnRole) => {
     setMapping((prev) => ({ ...prev, [header]: role }));
+    setValidationError(null);
+  };
+
+  const validateMapping = (): string | null => {
+    const revenueCols = Object.values(mapping).filter((r) => r === 'revenue');
+    const dimensionCols = Object.values(mapping).filter((r) => r === 'dimension');
+    const dateCols = Object.values(mapping).filter((r) => r === 'date');
+
+    if (revenueCols.length < 1) {
+      return 'At least one column must be mapped to Revenue.';
+    }
+    if (dimensionCols.length === 0) {
+      return 'Exactly one column must be mapped to Dimension (Group by).';
+    }
+    if (dimensionCols.length > 1) {
+      return 'Only one column can be mapped to Dimension. Please map the others to a different role.';
+    }
+    if (dateCols.length < 1) {
+      return 'At least one column must be mapped to Date for weekly grouping.';
+    }
+    return null;
   };
 
   const handleImportWithoutOntology = () => {
+    const err = validateMapping();
+    if (err) {
+      setValidationError(err);
+      toast.error(err);
+      return;
+    }
+    setValidationError(null);
     onImport?.({ dataType, mapping, ontology: null });
   };
 
   const handleImportWithOntology = () => {
+    const err = validateMapping();
+    if (err) {
+      setValidationError(err);
+      toast.error(err);
+      return;
+    }
+    setValidationError(null);
     if (!enableOntology || !entityTypeId || !nameColumn) {
       onImport?.({ dataType, mapping, ontology: null });
       return;
@@ -260,6 +325,11 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
             </div>
           </div>
 
+          {validationError && (
+            <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">
+              {validationError}
+            </div>
+          )}
           <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
             <Button
               type="button"
@@ -473,6 +543,11 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
             )}
           </div>
 
+          {validationError && (
+            <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">
+              {validationError}
+            </div>
+          )}
           <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
             <Button
               type="button"
