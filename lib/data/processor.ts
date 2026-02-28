@@ -13,6 +13,7 @@ type UploadRow = {
   id: string;
   org_id: string;
   data_type: string;
+  column_mapping: Record<string, string> | null;
 };
 
 type Period = 'daily' | 'weekly' | 'monthly';
@@ -26,6 +27,27 @@ interface SnapshotMetric {
 }
 
 type MetricAccumulator = Record<string, SnapshotMetric>;
+
+function parseNumeric(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const cleaned = value
+      .replace(/[$,]/g, '') // remove currency symbols and commas
+      .trim();
+
+    if (!cleaned) return null;
+
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
 
 function toDateKey(raw: string | null): string | null {
   if (!raw) return null;
@@ -42,7 +64,7 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
 
   const { data: upload, error: uploadError } = await supabase
     .from('uploads')
-    .select('id, org_id, data_type')
+    .select('id, org_id, data_type, column_mapping')
     .eq('id', uploadId)
     .eq('org_id', orgId)
     .maybeSingle<UploadRow>();
@@ -181,6 +203,42 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     return metrics;
   }
 
+  function extractFromMapping(
+    record: Record<string, unknown>,
+    mapping: Record<string, string>,
+  ): SnapshotMetric {
+    const metrics: SnapshotMetric = {};
+
+    for (const [header, role] of Object.entries(mapping)) {
+      const rawValue = record[header];
+      const numeric = parseNumeric(rawValue);
+      if (numeric === null) continue;
+
+      switch (role) {
+        case 'revenue':
+          metrics.revenue = (metrics.revenue ?? 0) + numeric;
+          break;
+
+        case 'cost':
+          metrics.laborCost = (metrics.laborCost ?? 0) + numeric;
+          break;
+
+        case 'labor_hours':
+          metrics.laborHours = (metrics.laborHours ?? 0) + numeric;
+          break;
+
+        case 'attendance':
+          metrics.attendance = (metrics.attendance ?? 0) + numeric;
+          break;
+
+        default:
+          break;
+      }
+    }
+
+    return metrics;
+  }
+
   function hasAny(m: SnapshotMetric): boolean {
     return (
       m.revenue !== undefined ||
@@ -202,8 +260,24 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     const record = row.data as Record<string, unknown>;
     const dataType = upload.data_type.toLowerCase();
 
-    let metrics: SnapshotMetric = extractUniversal(record);
-    if (!hasAny(metrics)) {
+    let metrics: SnapshotMetric = {};
+
+    const mapping = upload.column_mapping ?? null;
+
+    if (
+      mapping &&
+      Object.values(mapping).some((role) =>
+        ['revenue', 'cost', 'labor_hours', 'attendance'].includes(role),
+      )
+    ) {
+      metrics = extractFromMapping(record, mapping);
+    }
+
+    if (!Object.keys(metrics).length) {
+      metrics = extractUniversal(record);
+    }
+
+    if (!Object.keys(metrics).length) {
       metrics = extractByDataType(record, dataType);
     }
 
@@ -228,7 +302,12 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     ...buildRows('monthly', monthlyMetrics),
   ];
 
-  if (upsertRows.length === 0) {
+  if (!upsertRows.length) {
+    console.log('KPI generation produced no rows', {
+      uploadId,
+      orgId,
+      hasMapping: Boolean(upload.column_mapping),
+    });
     return;
   }
 
