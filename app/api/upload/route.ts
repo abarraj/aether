@@ -12,6 +12,11 @@ import { processUploadData } from '@/lib/data/processor';
 import { computePerformanceGaps } from '@/lib/data/performance-gaps';
 import { detectOntology } from '@/lib/ai/ontology-detector';
 import { buildOntologyFromDetection } from '@/lib/data/ontology-builder';
+import {
+  getMappedValue,
+  findFallbackDateValue,
+  normalizeDate,
+} from '@/lib/data/date-mapping';
 
 type ProfileOrg = {
   org_id: string | null;
@@ -141,29 +146,21 @@ export async function POST(request: NextRequest) {
     const rowCount = rows.length;
 
     if (rowCount > 0) {
-      const dateHeader = Object.entries(columnMapping).find(([, role]) => role === 'date')?.[0] ?? null;
+      const mapping = columnMapping as Record<string, string>;
+      const dateHeader = Object.entries(mapping).find(([, role]) => role === 'date')?.[0] ?? null;
 
-      const normalizeDate = (raw: unknown): string | null => {
-        if (raw === null || raw === undefined) return null;
-        const s = String(raw).trim();
-        if (!s) return null;
-        const d = new Date(s);
-        if (Number.isNaN(d.getTime())) return null;
-        return d.toISOString().slice(0, 10);
-      };
-
-      const fallbackDateFromRow = (row: Record<string, string>): unknown => {
-        const dateLikeKey = Object.keys(row).find(
-          (k) => /date|time/i.test(k),
-        );
-        return dateLikeKey ? row[dateLikeKey] : null;
-      };
+      console.log('Upload date mapping', {
+        uploadId: uploadRecord.id,
+        hasMapping: Object.keys(mapping).length > 0,
+        dateHeader,
+        sampleKeys: rows?.[0] ? Object.keys(rows[0]).slice(0, 8) : [],
+      });
 
       const rowsToInsert = rows.map((row) => {
-        const raw =
-          (dateHeader ? (row[dateHeader] ?? null) : null) ??
-          fallbackDateFromRow(row);
-        const normalized = normalizeDate(raw);
+        const rowAsRecord = row as Record<string, unknown>;
+        const rawDate =
+          getMappedValue(rowAsRecord, dateHeader) ?? findFallbackDateValue(rowAsRecord);
+        const normalized = normalizeDate(rawDate);
         return {
           org_id: orgId,
           upload_id: uploadRecord.id,
@@ -171,6 +168,13 @@ export async function POST(request: NextRequest) {
           data: row,
           date: normalized,
         };
+      });
+
+      const nullDates = rowsToInsert.reduce((acc, r) => acc + (r.date ? 0 : 1), 0);
+      console.log('Upload date results', {
+        uploadId: uploadRecord.id,
+        total: rowsToInsert.length,
+        nullDates,
       });
 
       const { error: rowsError } = await supabase.from('data_rows').insert(rowsToInsert);
