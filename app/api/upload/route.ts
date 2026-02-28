@@ -173,38 +173,45 @@ export async function POST(request: NextRequest) {
         const allRows = (dataRows ?? [])
           .map((r: { data: Record<string, unknown> }) => r.data)
           .filter((d: unknown): d is Record<string, unknown> => Boolean(d) && typeof d === 'object');
-        if (allRows.length === 0) return;
-        const headers = Object.keys(allRows[0] ?? {});
-        if (headers.length === 0) return;
 
-        const detection = await detectOntology(headers, allRows, orgId);
-        if (detection.confidence <= 0.3 || detection.entityTypes.length === 0) return;
-
-        const counts = await buildOntologyFromDetection(orgId, uploadRecord.id, detection, allRows);
-        await logAuditEvent({
-          orgId,
-          actorId: user.id,
-          actorEmail: user.email ?? null,
-          action: 'ontology.auto_detected',
-          targetType: 'upload',
-          targetId: uploadRecord.id,
-          description: `Auto-detected ontology from ${file.name}`,
-          metadata: {
-            entity_types: detection.entityTypes.length,
-            relationships: detection.relationships.length,
-            entityTypesCreated: counts.entityTypesCreated,
-            entitiesCreated: counts.entitiesCreated,
-            relationshipsCreated: counts.relationshipsCreated,
-            confidence: detection.confidence,
-            reasoning: detection.reasoning,
-          },
-          ipAddress,
-        });
+        if (allRows.length > 0) {
+          const headers = Object.keys(allRows[0] ?? {});
+          if (headers.length > 0) {
+            const detection = await detectOntology(headers, allRows, orgId);
+            if (detection.confidence > 0.3 && detection.entityTypes.length > 0) {
+              const counts = await buildOntologyFromDetection(
+                orgId,
+                uploadRecord.id,
+                detection,
+                allRows,
+              );
+              await logAuditEvent({
+                orgId,
+                actorId: user.id,
+                actorEmail: user.email ?? null,
+                action: 'ontology.auto_detected',
+                targetType: 'upload',
+                targetId: uploadRecord.id,
+                description: `Auto-detected ontology from ${file.name}`,
+                metadata: {
+                  entity_types: detection.entityTypes.length,
+                  relationships: detection.relationships.length,
+                  entityTypesCreated: counts.entityTypesCreated,
+                  entitiesCreated: counts.entitiesCreated,
+                  relationshipsCreated: counts.relationshipsCreated,
+                  confidence: detection.confidence,
+                  reasoning: detection.reasoning,
+                },
+                ipAddress,
+              });
+            }
+          }
+        }
       } catch (_err) {
         // Do not fail upload; log in audit or server logs if needed
       }
     } catch (detectionError) {
-      console.error("Ontology detection failed:", detectionError);
+      console.error('Ontology detection failed:', detectionError);
     }
 
     let ontologyResult: { entitiesCreated: number; relationshipsCreated: number } | undefined;

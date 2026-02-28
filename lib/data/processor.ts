@@ -77,11 +77,42 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     };
   };
 
-  const REVENUE_KEYS = ['revenue', 'amount', 'total', 'net', 'gross'];
-  const LABOR_COST_KEYS = ['cost', 'labor_cost', 'labour_cost'];
+  const REVENUE_KEYS = [
+    'revenue',
+    'amount',
+    'total',
+    'net',
+    'gross',
+    'sales',
+    'income',
+    'price',
+    'revenue_per_class',
+    'total_revenue',
+  ];
+  const LABOR_COST_KEYS = [
+    'cost',
+    'labor_cost',
+    'labour_cost',
+    'staff_cost',
+    'instructor_cost',
+    'salary',
+    'wages',
+    'payroll',
+    'commission',
+  ];
   const LABOR_HOURS_KEYS = ['hours', 'labor_hours'];
-  const ATTENDANCE_KEYS = ['attendance', 'count', 'check_ins', 'headcount'];
-  const UTILIZATION_KEYS = ['utilization', 'occupancy'];
+  const ATTENDANCE_KEYS = [
+    'attendance',
+    'count',
+    'check_ins',
+    'headcount',
+    'attended',
+    'booked',
+    'signups',
+    'participants',
+    'deals_closed',
+  ];
+  const UTILIZATION_KEYS = ['utilization', 'occupancy', 'fill_rate', 'capacity_pct', 'usage'];
 
   function getByKeys(map: Record<string, unknown>, keys: string[]): number | undefined {
     for (const key of keys) {

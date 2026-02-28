@@ -164,6 +164,12 @@ export default function DataPage() {
         .eq('org_id', org.id);
       if (snapshotsError) errors.push('KPI snapshots');
 
+      const { error: gapsError } = await supabase
+        .from('performance_gaps')
+        .delete()
+        .eq('upload_id', id);
+      if (gapsError) errors.push('performance gaps');
+
       // 6. Orphan cleanup: delete relationship_types that have no remaining entity_relationships
       const { data: usedRelTypeIds } = await supabase
         .from('entity_relationships')

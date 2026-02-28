@@ -157,7 +157,7 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: To
           </button>
 
           {isOpen && (
-            <div className="absolute right-0 mt-2 w-44 rounded-2xl border border-zinc-800 bg-zinc-950 py-1 text-xs text-slate-200 shadow-xl">
+          <div className="absolute right-0 mt-2 w-44 rounded-2xl border border-zinc-800 bg-zinc-950 py-1 text-xs text-slate-200 shadow-xl z-50">
               <button
                 type="button"
                 className="block w-full px-3 py-2 text-left hover:bg-zinc-900"
