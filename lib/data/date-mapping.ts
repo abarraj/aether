@@ -27,11 +27,20 @@ export function getMappedValue(
 
 export function findFallbackDateValue(row: Record<string, unknown>): unknown {
   const keys = Object.keys(row);
-  const candidate = keys.find((k) => {
-    const nk = normKey(k);
-    return nk.includes('date') || nk.includes('time') || nk.includes('timestamp');
-  });
-  return candidate ? row[candidate] : null;
+  const priorityOrder = [
+    (nk: string) => nk.includes('week_start'),
+    (nk: string) => nk.includes('period_start'),
+    (nk: string) => nk.includes('start_date'),
+    (nk: string) => nk.includes('date'),
+    (nk: string) => nk.includes('time'),
+    (nk: string) => nk.includes('timestamp'),
+    (nk: string) => nk.includes('week'),
+  ];
+  for (const pred of priorityOrder) {
+    const candidate = keys.find((k) => pred(normKey(k)));
+    if (candidate) return row[candidate];
+  }
+  return null;
 }
 
 export function extractDateFromRow(

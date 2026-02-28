@@ -17,6 +17,7 @@ import {
   findFallbackDateValue,
   normalizeDate,
 } from '@/lib/data/date-mapping';
+import { normalizeColumnMapping } from '@/lib/data/normalize-column-mapping';
 
 type ProfileOrg = {
   org_id: string | null;
@@ -35,14 +36,7 @@ export async function POST(request: NextRequest) {
     if (typeof columnMappingRaw === 'string' && columnMappingRaw.length > 0) {
       try {
         const parsed = JSON.parse(columnMappingRaw) as unknown;
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          columnMapping = Object.fromEntries(
-            Object.entries(parsed).filter(
-              (entry): entry is [string, string] =>
-                typeof entry[0] === 'string' && typeof entry[1] === 'string',
-            ),
-          );
-        }
+        columnMapping = normalizeColumnMapping(parsed);
       } catch {
         // ignore invalid column_mapping
       }

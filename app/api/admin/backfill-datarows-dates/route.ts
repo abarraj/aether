@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { subDays } from 'date-fns';
 
 import { extractDateFromRow } from '@/lib/data/date-mapping';
+import { normalizeColumnMapping } from '@/lib/data/normalize-column-mapping';
 
 const BATCH_SIZE = 200;
 
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
   let totalStillNull = 0;
 
   for (const upload of uploads) {
-    const mapping = (upload.column_mapping ?? {}) as Record<string, string>;
+    const mapping = normalizeColumnMapping(upload.column_mapping);
     const dateHeader = Object.entries(mapping).find(([, role]) => role === 'date')?.[0] ?? null;
 
     const { data: rows, error: rowsError } = await supabase

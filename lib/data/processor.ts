@@ -3,6 +3,7 @@
 import { parseISO, startOfDay, startOfISOWeek, startOfMonth, formatISO } from 'date-fns';
 
 import { createClient } from '@/lib/supabase/server';
+import { normalizeColumnMapping } from '@/lib/data/normalize-column-mapping';
 
 type DataRow = {
   date: string | null;
@@ -253,10 +254,10 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
 
     let metrics: SnapshotMetric = {};
 
-    const mapping = upload.column_mapping ?? null;
+    const mapping = normalizeColumnMapping(upload.column_mapping);
 
     if (
-      mapping &&
+      Object.keys(mapping).length > 0 &&
       Object.values(mapping).some((role) =>
         ['revenue', 'cost', 'labor_hours', 'attendance'].includes(role),
       )
