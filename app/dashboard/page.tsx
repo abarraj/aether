@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Area,
@@ -49,6 +49,11 @@ export default function DashboardPage() {
   const [preset, setPreset] = useState<RangePreset>(initial.preset);
   const [range, setRange] = useState<DateRange>(initial.range);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [leakage, setLeakage] = useState<{
+    weekStart: string;
+    totalLeakage: number;
+    topLeakage: { dimension_value: string; gap_value: number }[];
+  } | null>(null);
 
   const effectiveOrgIds =
     activeOrgIds.length > 0 ? activeOrgIds : org ? [org.id] : [];
@@ -122,6 +127,32 @@ export default function DashboardPage() {
       }
     },
   );
+
+  useEffect(() => {
+    if (!org) {
+      setLeakage(null);
+      return;
+    }
+    fetch('/api/metrics/gaps/weekly')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.weekStart === 'string') {
+          setLeakage({
+            weekStart: data.weekStart,
+            totalLeakage: Number(data.totalLeakage ?? 0) || 0,
+            topLeakage: Array.isArray(data.topLeakage)
+              ? data.topLeakage.slice(0, 5).map((r: { dimension_value?: string; gap_value?: number }) => ({
+                  dimension_value: String(r.dimension_value ?? ''),
+                  gap_value: Number(r.gap_value ?? 0),
+                }))
+              : [],
+          });
+        } else {
+          setLeakage(null);
+        }
+      })
+      .catch(() => setLeakage(null));
+  }, [org?.id]);
 
   const formatCurrency = (value: number): string =>
     new Intl.NumberFormat('en-US', {
@@ -302,6 +333,43 @@ export default function DashboardPage() {
         </motion.div>
       ) : (
         <>
+          {/* Leakage this week */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 px-5 py-4"
+          >
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
+              Leakage this week
+            </div>
+            <div className="mt-1.5 flex items-baseline justify-between gap-4">
+              <div className="text-2xl font-bold tracking-tighter text-white">
+                {leakage && leakage.totalLeakage > 0 ? (
+                  <AnimatedNumber
+                    value={leakage.totalLeakage}
+                    options={{
+                      style: 'currency',
+                      currency: org?.currency ?? 'USD',
+                      maximumFractionDigits: 0,
+                    }}
+                  />
+                ) : (
+                  '—'
+                )}
+              </div>
+              {leakage?.weekStart && (
+                <span className="text-[11px] text-slate-500">
+                  {leakage.totalLeakage > 0 && leakage.topLeakage[0]?.dimension_value ? (
+                    <>Biggest leak: {leakage.topLeakage[0].dimension_value}</>
+                  ) : (
+                    <>Week of {format(new Date(leakage.weekStart), 'MMM d')}</>
+                  )}
+                </span>
+              )}
+            </div>
+          </motion.div>
+
           {/* Row 2: Hero revenue card */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
