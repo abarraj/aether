@@ -1,7 +1,7 @@
 // Dashboard data page showing uploads and entry point for new CSV imports.
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Database, FileSpreadsheet, Loader2, Link2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import { useUser } from '@/hooks/use-user';
+import { useRealtimeTable } from '@/hooks/use-realtime';
 import { UploadDropzone } from '@/components/data/upload-dropzone';
 
 type UploadStatus = 'pending' | 'processing' | 'ready' | 'error';
@@ -45,47 +46,34 @@ export default function DataPage() {
     return () => document.removeEventListener('keydown', onEscape);
   }, [uploadToDelete, isDeleting]);
 
-  useEffect(() => {
-    const fetchUploads = async () => {
-      if (!org) return;
-      const supabase = createClient();
-      setIsLoadingUploads(true);
-
-      const { data, error } = await supabase
-        .from('uploads')
-        .select('id, file_name, file_path, data_type, row_count, status, created_at')
-        .eq('org_id', org.id)
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        setUploads(data as UploadRow[]);
-      }
-
-      setIsLoadingUploads(false);
-    };
-
-    if (!isLoading && org) {
-      void fetchUploads();
-    }
-  }, [isLoading, org]);
-
-  const refreshUploads = async () => {
+  const loadUploads = useCallback(async () => {
     if (!org) return;
     const supabase = createClient();
     setIsLoadingUploads(true);
-
     const { data, error } = await supabase
       .from('uploads')
       .select('id, file_name, file_path, data_type, row_count, status, created_at')
       .eq('org_id', org.id)
       .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setUploads(data as UploadRow[]);
-    }
-
+    if (!error && data) setUploads(data as UploadRow[]);
     setIsLoadingUploads(false);
-  };
+  }, [org]);
+
+  useEffect(() => {
+    if (!isLoading && org) void loadUploads();
+  }, [isLoading, org, loadUploads]);
+
+  useRealtimeTable(
+    'uploads',
+    org ? { column: 'org_id', value: org.id } : undefined,
+    () => {
+      void loadUploads();
+    },
+  );
+
+  const refreshUploads = useCallback(async () => {
+    await loadUploads();
+  }, [loadUploads]);
 
   const handleDeleteClick = (e: React.MouseEvent, upload: UploadRow) => {
     e.stopPropagation();

@@ -7,6 +7,7 @@ import { Database, Plug, Upload } from 'lucide-react';
 
 import { useUser } from '@/hooks/use-user';
 import { createClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 
 type UploadSource = {
   id: string;
@@ -493,6 +494,9 @@ export default function IntegrationsSettingsPage() {
 
               const handleClick = () => {
                 if (isSheets) {
+                  toast.info(
+                    'Google Sheets integration launching soon. For now, export your sheet as CSV and upload it.',
+                  );
                   setIsSheetsModalOpen(true);
                 }
               };

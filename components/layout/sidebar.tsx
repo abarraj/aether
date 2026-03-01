@@ -51,11 +51,15 @@ export function Sidebar({
   return (
     <div className="w-72 border-r border-zinc-800 bg-[#0A0A0A] flex flex-col relative">
       <div className="p-6 border-b border-zinc-800 flex items-center gap-3">
-        <div className="w-8 h-8 bg-emerald-500 rounded-2xl flex items-center justify-center">
-          <span className="text-white font-bold text-xl">A</span>
-        </div>
+        <Link href="/dashboard" className="flex items-center gap-3 group">
+          <div className="w-8 h-8 bg-emerald-500 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-105">
+            <span className="text-white font-bold text-xl">A</span>
+          </div>
+          <div className="font-semibold tracking-tight text-xl group-hover:text-emerald-400 transition-colors">
+            Aether
+          </div>
+        </Link>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold tracking-tight text-xl">Aether</div>
           <button
             type="button"
             onClick={() => isGroup && setOrgDropdownOpen(!orgDropdownOpen)}

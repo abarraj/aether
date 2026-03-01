@@ -8,10 +8,6 @@ import { parseCsv } from '@/lib/csv-parser';
 import { canAddDataSource } from '@/lib/billing/queries';
 import { logAuditEvent } from '@/lib/audit';
 import { extractEntities, type OntologyMapping } from '@/lib/data/ontology-extractor';
-import { processUploadData } from '@/lib/data/processor';
-import { computePerformanceGaps } from '@/lib/data/performance-gaps';
-import { detectOntology } from '@/lib/ai/ontology-detector';
-import { buildOntologyFromDetection } from '@/lib/data/ontology-builder';
 import {
   getMappedValue,
   findFallbackDateValue,
@@ -186,7 +182,7 @@ export async function POST(request: NextRequest) {
     const { error: updateError } = await supabase
       .from('uploads')
       .update({
-        status: 'ready',
+        status: 'processing',
         row_count: rowCount,
       })
       .eq('id', uploadRecord.id);
@@ -195,72 +191,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to finalize upload.' }, { status: 500 });
     }
 
-    await processUploadData(orgId, uploadRecord.id);
-
-    try {
-      await computePerformanceGaps(orgId, uploadRecord.id);
-    } catch (gapErr) {
-      console.error('Performance gap computation failed:', gapErr);
-    }
+    // Fire background processing (non-blocking)
+    const baseUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+      'http://localhost:3000';
 
     const ipHeader = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
     const ipAddress = ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
 
-    // Auto-detect ontology from upload data
-    try {
-      try {
-        const sb = await createClient();
-        const { data: dataRows } = await sb
-          .from('data_rows')
-          .select('data')
-          .eq('org_id', orgId)
-          .eq('upload_id', uploadRecord.id)
-          .returns<{ data: Record<string, unknown> }[]>();
+    fetch(`${baseUrl}/api/upload/process`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': process.env.INTERNAL_API_SECRET ?? '',
+      },
+      body: JSON.stringify({
+        orgId,
+        uploadId: uploadRecord.id,
+        userId: user.id,
+        userEmail: user.email ?? null,
+        fileName: file.name,
+        ipAddress,
+      }),
+    }).catch((err) => {
+      console.error('Failed to trigger background processing:', err);
+    });
 
-        const allRows = (dataRows ?? [])
-          .map((r: { data: Record<string, unknown> }) => r.data)
-          .filter((d: unknown): d is Record<string, unknown> => Boolean(d) && typeof d === 'object');
-
-        if (allRows.length > 0) {
-          const headers = Object.keys(allRows[0] ?? {});
-          if (headers.length > 0) {
-            const detection = await detectOntology(headers, allRows, orgId);
-            if (detection.confidence > 0.3 && detection.entityTypes.length > 0) {
-              const counts = await buildOntologyFromDetection(
-                orgId,
-                uploadRecord.id,
-                detection,
-                allRows,
-              );
-              await logAuditEvent({
-                orgId,
-                actorId: user.id,
-                actorEmail: user.email ?? null,
-                action: 'ontology.auto_detected',
-                targetType: 'upload',
-                targetId: uploadRecord.id,
-                description: `Auto-detected ontology from ${file.name}`,
-                metadata: {
-                  entity_types: detection.entityTypes.length,
-                  relationships: detection.relationships.length,
-                  entityTypesCreated: counts.entityTypesCreated,
-                  entitiesCreated: counts.entitiesCreated,
-                  relationshipsCreated: counts.relationshipsCreated,
-                  confidence: detection.confidence,
-                  reasoning: detection.reasoning,
-                },
-                ipAddress,
-              });
-            }
-          }
-        }
-      } catch (_err) {
-        // Do not fail upload; log in audit or server logs if needed
-      }
-    } catch (detectionError) {
-      console.error('Ontology detection failed:', detectionError);
-    }
-
+    // Handle manual ontology mapping if provided
     let ontologyResult: { entitiesCreated: number; relationshipsCreated: number } | undefined;
     if (ontology && rowCount > 0) {
       const result = await extractEntities(orgId, uploadRecord.id, ontology);
