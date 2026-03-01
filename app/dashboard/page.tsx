@@ -13,7 +13,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { Sparkles, Info, ChevronRight, Target, Zap } from 'lucide-react';
+import { Sparkles, Info, ChevronRight, Target, Zap, Mail } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 
 import { useUser } from '@/hooks/use-user';
@@ -109,6 +109,7 @@ export default function DashboardPage() {
   const [topLeakers, setTopLeakers] = useState<
     { value: string; gap: number; pct: number | null }[]
   >([]);
+  const [prevLeakage, setPrevLeakage] = useState<number | null>(null);
 
   const effectiveOrgIds =
     activeOrgIds.length > 0 ? activeOrgIds : org ? [org.id] : [];
@@ -271,6 +272,19 @@ export default function DashboardPage() {
     }
   }, [leakage]);
 
+  // Previous period leakage for comparison
+  useEffect(() => {
+    if (!org?.id || !leakage?.weekStart) return;
+    const prevWeekStart = format(
+      subDays(new Date(leakage.weekStart), 7),
+      'yyyy-MM-dd',
+    );
+    fetch(`/api/metrics/gaps/weekly?weekStart=${prevWeekStart}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setPrevLeakage(data?.totalLeakage ?? null))
+      .catch(() => setPrevLeakage(null));
+  }, [org?.id, leakage?.weekStart]);
+
   useEffect(() => {
     if (!org) return;
     const checkUploads = async () => {
@@ -346,15 +360,20 @@ export default function DashboardPage() {
     const positive = change >= 0;
     const className = isPositiveGood
       ? positive
-        ? 'text-emerald-400'
-        : 'text-rose-400'
+        ? 'bg-emerald-500/10 text-emerald-400'
+        : 'bg-rose-500/10 text-rose-400'
       : positive
-        ? 'text-rose-400'
-        : 'text-emerald-400';
+        ? 'bg-rose-500/10 text-rose-400'
+        : 'bg-emerald-500/10 text-emerald-400';
     return (
-      <span className={cn('text-[11px] font-semibold', className)}>
-        {positive ? '+' : ''}
-        {change.toFixed(1)}%
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-semibold',
+          className,
+        )}
+      >
+        {positive ? '↑' : '↓'} {Math.abs(change).toFixed(1)}%
+        <span className="font-normal text-slate-500">vs prev</span>
       </span>
     );
   };
@@ -404,6 +423,28 @@ export default function DashboardPage() {
               );
             })}
           </div>
+          <button
+            type="button"
+            onClick={async () => {
+              const id = toast.loading('Generating report...');
+              try {
+                const res = await fetch('/api/reports/send', { method: 'POST' });
+                toast.dismiss(id);
+                if (res.ok) {
+                  toast.success('Weekly report sent to your email!');
+                } else {
+                  toast.error('Failed to send report');
+                }
+              } catch {
+                toast.dismiss(id);
+                toast.error('Something went wrong');
+              }
+            }}
+            className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs text-slate-400 transition hover:border-zinc-700 hover:text-slate-200"
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Email report
+          </button>
           <button
             type="button"
             className="rounded-2xl border border-zinc-800 bg-zinc-950/80 px-4 py-1.5 text-xs text-slate-200 hover:bg-zinc-900 transition-all"
@@ -522,6 +563,26 @@ export default function DashboardPage() {
                     '—'
                   )}
                 </div>
+                {prevLeakage != null &&
+                  prevLeakage > 0 &&
+                  leakage &&
+                  leakage.totalLeakage > 0 && (
+                    <div
+                      className={cn(
+                        'mt-1 text-xs font-medium',
+                        leakage.totalLeakage <= prevLeakage
+                          ? 'text-emerald-400'
+                          : 'text-rose-400',
+                      )}
+                    >
+                      {leakage.totalLeakage <= prevLeakage ? '↓' : '↑'}{' '}
+                      {Math.abs(
+                        ((leakage.totalLeakage - prevLeakage) / prevLeakage) *
+                          100,
+                      ).toFixed(1)}
+                      % vs prev period
+                    </div>
+                  )}
                 {topLeakers.length > 0 && (
                   <div className="mt-4 space-y-2">
                     {topLeakers.slice(0, 5).map((leaker) => {
@@ -685,9 +746,11 @@ export default function DashboardPage() {
                     >
                       {kpis.changes.revenuePct >= 0 ? '↑' : '↓'}{' '}
                       {Math.abs(kpis.changes.revenuePct).toFixed(1)}%
+                      <span className="ml-0.5 font-normal text-slate-500">
+                        vs prev
+                      </span>
                     </span>
                   )}
-                  <span className="text-xs text-slate-500">vs {periodLabel}</span>
                 </div>
               </div>
 

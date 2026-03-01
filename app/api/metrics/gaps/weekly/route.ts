@@ -1,6 +1,6 @@
 // Weekly performance gap metrics API.
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { startOfISOWeek } from 'date-fns';
 
 import { createClient } from '@/lib/supabase/server';
@@ -18,7 +18,7 @@ type GapRow = {
   expected_value: number;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
 
@@ -45,19 +45,26 @@ export async function GET() {
 
     const orgId = profile.org_id;
 
-    // Get the most recent week that has gap data (not necessarily current week)
-    const { data: latestWeek } = await supabase
-      .from('performance_gaps')
-      .select('period_start')
-      .eq('org_id', orgId)
-      .eq('period', 'weekly')
-      .order('period_start', { ascending: false })
-      .limit(1)
-      .maybeSingle<{ period_start: string }>();
+    const { searchParams } = new URL(request.url);
+    const weekStartParam = searchParams.get('weekStart');
 
-    const weekStart =
-      latestWeek?.period_start ??
-      startOfISOWeek(new Date()).toISOString().slice(0, 10);
+    let weekStart: string;
+    if (weekStartParam) {
+      weekStart = weekStartParam;
+    } else {
+      const { data: latestWeek } = await supabase
+        .from('performance_gaps')
+        .select('period_start')
+        .eq('org_id', orgId)
+        .eq('period', 'weekly')
+        .order('period_start', { ascending: false })
+        .limit(1)
+        .maybeSingle<{ period_start: string }>();
+
+      weekStart =
+        latestWeek?.period_start ??
+        startOfISOWeek(new Date()).toISOString().slice(0, 10);
+    }
 
     const { data: rows, error: rowsError } = await supabase
       .from('performance_gaps')
