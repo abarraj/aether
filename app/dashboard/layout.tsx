@@ -12,10 +12,13 @@ import {
   MessageSquare,
   Bell,
   Settings,
+  Menu,
+  X,
 } from 'lucide-react';
 
 import { Sidebar } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
+import { cn } from '@/lib/utils';
 import { useUser } from '@/hooks/use-user';
 import { useOrg } from '@/hooks/use-org';
 import { createClient } from '@/lib/supabase/client';
@@ -42,6 +45,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   } = useOrg();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [alertsCount, setAlertsCount] = useState<number>(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const supabase = createClient();
   const alertsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -195,23 +199,52 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className="flex h-screen bg-[#0A0A0A] overflow-hidden">
-      <Sidebar
-        navItems={navItems}
-        orgName={displayOrgName}
-        userName={displayUserName}
-        userRole={displayUserRole}
-        onSignOut={handleSignOut}
-        alertsCount={alertsCount}
-        isGroup={isGroup}
-        childOrgs={childOrgs}
-        viewMode={viewMode}
-        activeOrgId={org?.id}
-        onSwitchOrg={switchToOrg}
-        onSwitchPortfolio={switchToPortfolio}
-      />
+      <button
+        type="button"
+        className="fixed top-4 left-4 z-50 rounded-xl border border-zinc-800 bg-zinc-900 p-2 lg:hidden"
+        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        aria-label="Toggle menu"
+      >
+        {mobileMenuOpen ? (
+          <X className="h-5 w-5 text-slate-300" />
+        ) : (
+          <Menu className="h-5 w-5 text-slate-300" />
+        )}
+      </button>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="relative z-50">
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 lg:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <div
+        className={cn(
+          'fixed inset-y-0 left-0 z-40 w-72 transition-transform duration-300 lg:relative lg:translate-x-0',
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        <Sidebar
+          navItems={navItems}
+          orgName={displayOrgName}
+          userName={displayUserName}
+          userRole={displayUserRole}
+          onSignOut={handleSignOut}
+          onNavigate={() => setMobileMenuOpen(false)}
+          alertsCount={alertsCount}
+          isGroup={isGroup}
+          childOrgs={childOrgs}
+          viewMode={viewMode}
+          activeOrgId={org?.id}
+          onSwitchOrg={switchToOrg}
+          onSwitchPortfolio={switchToPortfolio}
+        />
+      </div>
+
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="relative z-50 pl-14 lg:pl-0">
           <Topbar
             plan={effectiveOrg?.plan ?? 'starter'}
             userName={displayUserName}

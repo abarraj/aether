@@ -22,6 +22,7 @@ interface SidebarProps {
   userName: string;
   userRole: string;
   onSignOut: () => void;
+  onNavigate?: () => void;
   alertsCount?: number;
   isGroup?: boolean;
   childOrgs?: { id: string; name: string; industry: string | null }[];
@@ -37,6 +38,7 @@ export function Sidebar({
   userName,
   userRole,
   onSignOut,
+  onNavigate,
   alertsCount = 0,
   isGroup = false,
   childOrgs,
@@ -169,6 +171,7 @@ export function Sidebar({
               <Link
                 key={item.label}
                 href={item.href}
+                onClick={onNavigate}
                 className={`flex items-center gap-3 px-4 py-3 rounded-2xl border border-transparent transition-all duration-200 group ${
                   isActive
                     ? 'bg-emerald-500/10 text-emerald-400 border-l-2 border-emerald-400 -ml-[2px]'

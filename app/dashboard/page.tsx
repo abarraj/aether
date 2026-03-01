@@ -23,6 +23,7 @@ import { useBenchmarks } from '@/hooks/use-benchmarks';
 import { useRealtimeTable } from '@/hooks/use-realtime';
 import { toast } from 'sonner';
 import { AnimatedNumber } from '@/components/shared/animated-number';
+import { FirstRunBanner } from '@/components/shared/first-run-banner';
 import type { DateRange, Period } from '@/lib/data/aggregator';
 import { cn } from '@/lib/utils';
 
@@ -419,6 +420,7 @@ export default function DashboardPage() {
         </motion.div>
       ) : (
         <>
+          {hasSeries && <FirstRunBanner />}
           {/* Leakage this week */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}

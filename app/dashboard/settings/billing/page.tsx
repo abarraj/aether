@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 import { useUser } from '@/hooks/use-user';
 import { createClient } from '@/lib/supabase/client';
@@ -63,6 +64,40 @@ export default function BillingSettingsPage() {
   const formatLimit = (value: number | null): string =>
     value === null ? 'Unlimited' : value.toString();
 
+  const handleUpgrade = async (plan: string) => {
+    if (plan === 'enterprise') {
+      window.location.href = 'mailto:hello@718solutions.com?subject=Aether Enterprise';
+      return;
+    }
+    try {
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        toast.error(data.error ?? 'Unable to start checkout');
+      }
+    } catch {
+      toast.error('Something went wrong. Please try again.');
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === 'true') {
+      toast.success('Welcome to your new plan!');
+      window.history.replaceState({}, '', '/dashboard/settings/billing');
+    }
+    if (params.get('canceled') === 'true') {
+      toast.info('Checkout canceled — no changes made.');
+      window.history.replaceState({}, '', '/dashboard/settings/billing');
+    }
+  }, []);
+
   return (
     <div className="space-y-8">
       <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
@@ -107,21 +142,6 @@ export default function BillingSettingsPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5">
-            <div className="mb-3 text-sm font-medium text-slate-200">
-              Upgrade your workspace
-            </div>
-            <p className="text-xs text-slate-400">
-              Higher tiers unlock more data sources, team members, storage, and deeper AI analysis.
-              We&apos;re rolling out billing with design partners first.
-            </p>
-            <button
-              type="button"
-              className="mt-4 rounded-2xl bg-emerald-500 px-5 py-2 text-xs font-medium text-slate-950 hover:bg-emerald-600 active:scale-[0.985]"
-            >
-              Coming soon — join waitlist
-            </button>
-          </div>
         </div>
 
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-6 py-5">
@@ -194,11 +214,59 @@ export default function BillingSettingsPage() {
                   <td className="px-3 py-2 text-slate-500">—</td>
                   <td className="px-3 py-2 text-slate-500">—</td>
                   <td className="px-3 py-2 text-slate-200">
-                    SSO + custom roles + API access, dedicated support, white-glove onboarding, custom SLAs
+                    SSO + custom roles + API access, dedicated support,
+                    white-glove onboarding, custom SLAs
                   </td>
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div className="mt-6 grid grid-cols-3 gap-4">
+            <div>
+              {planKey === 'starter' ? (
+                <div className="w-full rounded-2xl border border-zinc-700 px-4 py-2.5 text-center text-sm text-slate-500">
+                  Current plan
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleUpgrade('starter')}
+                  className="w-full rounded-2xl border border-zinc-700 px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-zinc-900"
+                >
+                  Downgrade
+                </button>
+              )}
+            </div>
+            <div>
+              {planKey === 'growth' ? (
+                <div className="w-full rounded-2xl border border-emerald-500/30 px-4 py-2.5 text-center text-sm text-emerald-400">
+                  Current plan
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleUpgrade('growth')}
+                  className="w-full rounded-2xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-emerald-600"
+                >
+                  Upgrade to Growth
+                </button>
+              )}
+            </div>
+            <div>
+              {planKey === 'enterprise' ? (
+                <div className="w-full rounded-2xl border border-emerald-500/30 px-4 py-2.5 text-center text-sm text-emerald-400">
+                  Current plan
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleUpgrade('enterprise')}
+                  className="w-full rounded-2xl border border-zinc-700 px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-zinc-900"
+                >
+                  Contact Us
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

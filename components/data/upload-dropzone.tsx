@@ -185,8 +185,29 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
       setProgress(90);
 
       if (!response.ok) {
-        const result = (await response.json().catch(() => null)) as { error?: string } | null;
-        toast.error(result?.error ?? 'Upload failed.');
+        const result = (await response.json().catch(() => null)) as {
+          error?: string;
+          upgrade?: boolean;
+        } | null;
+        const isPlanLimit =
+          response.status === 403 ||
+          (result?.error?.toLowerCase().includes('limit') ?? false) ||
+          result?.upgrade === true;
+        if (isPlanLimit) {
+          toast.error(
+            "You've reached the Starter plan limit. Upgrade to Growth for unlimited data sources.",
+            {
+              action: {
+                label: 'Upgrade',
+                onClick: () => {
+                  window.location.href = '/dashboard/settings/billing';
+                },
+              },
+            },
+          );
+        } else {
+          toast.error(result?.error ?? 'Upload failed.');
+        }
         setIsUploading(false);
         setStep('confirm');
         return;

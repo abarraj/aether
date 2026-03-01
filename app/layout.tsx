@@ -3,9 +3,18 @@ import './globals.css';
 import { Toaster } from 'sonner';
 
 export const metadata: Metadata = {
-  title: 'Aether',
-  description: 'AI Chief Operating Officer for your business',
-  icons: { icon: '/favicon.ico' },
+  title: 'Aether — Revenue Intelligence for Modern Business',
+  description:
+    "Upload your data. See where you're leaving money on the table. Know exactly what to do about it.",
+  icons: {
+    icon: '/favicon.svg',
+  },
+  openGraph: {
+    title: 'Aether — Revenue Intelligence',
+    description:
+      "AI-powered operations intelligence that shows you where you're losing money and what to do about it.",
+    type: 'website',
+  },
 };
 
 export default function RootLayout({
