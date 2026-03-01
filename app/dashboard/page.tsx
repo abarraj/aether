@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   Area,
@@ -12,7 +13,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { Sparkles, Info } from 'lucide-react';
+import { Sparkles, Info, ChevronRight } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 
 import { useUser } from '@/hooks/use-user';
@@ -41,6 +42,7 @@ function getInitialRange(): { period: Period; preset: RangePreset; range: DateRa
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { profile } = useUser();
   const { org, activeOrgIds } = useOrg();
 
@@ -396,7 +398,8 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 px-5 py-4"
+            className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 px-5 py-4 cursor-pointer transition-all hover:border-emerald-500/30 hover:shadow-[0_0_20px_rgba(16,185,129,0.04)] group"
+            onClick={() => router.push('/dashboard/performance')}
           >
             <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
               Leakage this week
@@ -419,12 +422,30 @@ export default function DashboardPage() {
               {leakage?.weekStart && (
                 <span className="text-[11px] text-slate-500">
                   {leakage.totalLeakage > 0 && leakage.topLeakage[0]?.dimension_value ? (
-                    <>Biggest leak: {leakage.topLeakage[0].dimension_value}</>
+                    <>
+                      Biggest leak:{' '}
+                      <button
+                        type="button"
+                        className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(
+                            `/dashboard/performance?entity=${encodeURIComponent(leakage.topLeakage[0].dimension_value)}`,
+                          );
+                        }}
+                      >
+                        {leakage.topLeakage[0].dimension_value}
+                      </button>
+                    </>
                   ) : (
                     <>Week of {format(new Date(leakage.weekStart), 'MMM d')}</>
                   )}
                 </span>
               )}
+            </div>
+            <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-600 group-hover:text-emerald-400 transition-colors">
+              <span>View performance breakdown</span>
+              <ChevronRight className="h-3 w-3" />
             </div>
           </motion.div>
 
@@ -433,7 +454,8 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="relative overflow-hidden rounded-2xl border border-zinc-800/60 bg-gradient-to-br from-zinc-950 via-zinc-950 to-emerald-950/20 p-6"
+            className="relative overflow-hidden rounded-2xl border border-zinc-800/60 bg-gradient-to-br from-zinc-950 via-zinc-950 to-emerald-950/20 p-6 cursor-pointer group transition-all hover:border-emerald-500/30"
+            onClick={() => router.push('/dashboard/performance')}
           >
             <div className="pointer-events-none absolute right-[-80px] top-[-80px] h-96 w-96 rounded-full bg-emerald-500/[0.03] blur-3xl" />
             <div className="relative flex items-start justify-between gap-6">
@@ -503,6 +525,10 @@ export default function DashboardPage() {
                 </ResponsiveContainer>
               </div>
             </div>
+            <div className="mt-3 flex items-center gap-1 text-[11px] text-slate-600 group-hover:text-emerald-400 transition-colors">
+              <span>Deep dive into performance</span>
+              <ChevronRight className="h-3 w-3" />
+            </div>
           </motion.div>
 
           {/* Row 3: Secondary metrics */}
@@ -513,7 +539,18 @@ export default function DashboardPage() {
             className="grid grid-cols-1 gap-4 md:grid-cols-3"
           >
             {/* Staff Costs */}
-            <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5 transition-all duration-300 hover:border-zinc-700/80 group">
+            <div
+              role="button"
+              tabIndex={0}
+              className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5 transition-all duration-300 hover:border-zinc-700/80 cursor-pointer group"
+              onClick={() => router.push('/dashboard/performance')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  router.push('/dashboard/performance');
+                }
+              }}
+            >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
                   Staff Costs

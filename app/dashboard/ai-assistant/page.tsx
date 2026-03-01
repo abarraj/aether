@@ -2,8 +2,9 @@
 
 // AI Assistant chat experience within the Aether dashboard.
 
-import { useEffect, useRef, useState } from 'react';
-import { Send } from 'lucide-react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Send, ChevronRight } from 'lucide-react';
 import { useChat } from '@ai-sdk/react';
 
 import { useKpis } from '@/hooks/use-kpis';
@@ -11,6 +12,41 @@ import { useUser } from '@/hooks/use-user';
 import type { DateRange, Period } from '@/lib/data/aggregator';
 import { subDays, format } from 'date-fns';
 import { RecommendationBanner } from '@/components/ai/recommendation-banner';
+
+function RichMessage({
+  text,
+  onNavigate,
+}: {
+  text: string;
+  onNavigate: (path: string) => void;
+}) {
+  const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+
+  return (
+    <div className="space-y-3">
+      <div className="whitespace-pre-wrap">
+        {parts.map((part, i) => {
+          const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+          if (linkMatch) {
+            const [, label, path] = linkMatch;
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onNavigate(path ?? '')}
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors mx-0.5"
+              >
+                {label ?? ''}
+                <ChevronRight className="h-3 w-3" />
+              </button>
+            );
+          }
+          return <span key={i}>{part}</span>;
+        })}
+      </div>
+    </div>
+  );
+}
 
 function getInitialRange(): { period: Period; range: DateRange } {
   const end = new Date();
@@ -40,12 +76,15 @@ function getMessageText(message: {
   return '';
 }
 
-export default function AIAssistantPage() {
+function AIAssistantPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { profile, org } = useUser();
   const initial = getInitialRange();
   const orgIds = org ? [org.id] : [];
   const { kpis } = useKpis(initial.period, initial.range, 0, orgIds);
   const [uploadsExist, setUploadsExist] = useState(false);
+  const hasAutoSent = useRef(false);
 
   useEffect(() => {
     if (!org) return;
@@ -73,16 +112,27 @@ export default function AIAssistantPage() {
 
   const suggestedPrompts = hasData
     ? [
-        'How is my business doing this week?',
-        'Where am I losing the most money?',
-        'Are my staff costs too high?',
-        'Which days are my busiest and slowest?',
-        'What should I change to make more money next month?',
-        'Are there any red flags I should know about?',
+        'Where am I losing the most money and what should I do about it?',
+        'Which staff member needs the most attention right now?',
+        'Give me 3 things I should change this week to make more money.',
+        'Compare my best and worst performers — what can I learn?',
+        'Are there any patterns in my revenue that I should worry about?',
+        'What would happen if I cut my lowest-performing class?',
       ]
     : [
         'Connect your data first, then I can analyze your entire business. Head to Connected Data to get started.',
       ];
+
+  useEffect(() => {
+    if (hasAutoSent.current) return;
+    const autoPrompt = searchParams.get('prompt');
+    if (autoPrompt && autoPrompt.trim().length > 0 && hasData) {
+      hasAutoSent.current = true;
+      setTimeout(() => {
+        void append({ role: 'user', content: autoPrompt });
+      }, 500);
+    }
+  }, [searchParams, hasData, append]);
 
   const handleSuggestedClick = async (prompt: string) => {
     setInput('');
@@ -154,13 +204,20 @@ export default function AIAssistantPage() {
                   className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[75%] rounded-2xl px-6 py-4 whitespace-pre-wrap ${
+                    className={`max-w-[75%] rounded-2xl px-6 py-4 ${
                       message.role === 'user'
                         ? 'bg-emerald-500/5 border border-emerald-500/10 text-emerald-100'
                         : 'border border-zinc-800 bg-zinc-900/50 text-slate-200'
                     }`}
                   >
-                    {text}
+                    {message.role === 'user' ? (
+                      text
+                    ) : (
+                      <RichMessage
+                        text={text}
+                        onNavigate={(path) => router.push(path)}
+                      />
+                    )}
                   </div>
                 </div>
               );
@@ -213,5 +270,19 @@ export default function AIAssistantPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AIAssistantPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+        </div>
+      }
+    >
+      <AIAssistantPageInner />
+    </Suspense>
   );
 }

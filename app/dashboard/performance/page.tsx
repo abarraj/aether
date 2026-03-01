@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   TrendingDown,
@@ -8,6 +9,7 @@ import {
   ChevronRight,
   X,
   BarChart3,
+  Sparkles,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import {
@@ -19,7 +21,6 @@ import {
   Tooltip,
   Cell,
 } from 'recharts';
-import { useRouter } from 'next/navigation';
 import { useUser } from '@/hooks/use-user';
 import { useOrg } from '@/hooks/use-org';
 import { cn } from '@/lib/utils';
@@ -89,8 +90,9 @@ function formatDimensionLabel(field: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function PerformancePage() {
+function PerformancePageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { org } = useUser();
   const { org: orgFromOrg } = useOrg();
   const effectiveOrg = org ?? orgFromOrg;
@@ -154,6 +156,20 @@ export default function PerformancePage() {
       setActiveDimension(data.dimensions[0].field);
     }
   }, [data, activeDimension]);
+
+  useEffect(() => {
+    if (!data?.entities || data.entities.length === 0) return;
+    const entityParam = searchParams.get('entity');
+    if (entityParam) {
+      const match = data.entities.find(
+        (e) => e.value.toLowerCase() === entityParam.toLowerCase(),
+      );
+      if (match) {
+        setActiveDimension(match.field);
+        setSelectedEntity(match);
+      }
+    }
+  }, [data, searchParams]);
 
   const formatCurrency = useCallback(
     (value: number): string =>
@@ -258,6 +274,13 @@ export default function PerformancePage() {
           <p className="mt-0.5 text-[11px] text-slate-500">
             across {summary.weekCount} weeks
           </p>
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard')}
+            className="mt-1 flex items-center gap-1 text-[11px] text-slate-600 hover:text-emerald-400 transition-colors"
+          >
+            <span>← Back to dashboard</span>
+          </button>
         </div>
         <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5">
           <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
@@ -699,11 +722,43 @@ export default function PerformancePage() {
                     </table>
                   </div>
                 </div>
+                <div className="mt-6 pt-4 border-t border-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const entityName = selectedEntity!.value;
+                      const gapAmount = Math.round(selectedEntity!.totalGap);
+                      router.push(
+                        `/dashboard/ai-assistant?prompt=${encodeURIComponent(
+                          `Tell me about ${entityName}'s performance. They have a $${gapAmount.toLocaleString()} revenue gap. What's going wrong and what should I do about it?`,
+                        )}`,
+                      );
+                    }}
+                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Ask AI about {selectedEntity?.value}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function PerformancePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+        </div>
+      }
+    >
+      <PerformancePageInner />
+    </Suspense>
   );
 }
