@@ -54,6 +54,7 @@ export default function DashboardPage() {
     totalLeakage: number;
     topLeakage: { dimension_value: string; gap_value: number }[];
   } | null>(null);
+  const [hasUploads, setHasUploads] = useState<boolean | null>(null);
 
   const effectiveOrgIds =
     activeOrgIds.length > 0 ? activeOrgIds : org ? [org.id] : [];
@@ -92,7 +93,8 @@ export default function DashboardPage() {
   };
 
   const hasSeries = (kpis?.series?.length ?? 0) > 0;
-  const isEmpty = !isLoading && (!kpis || !hasSeries);
+  const hasDataButNotInRange = !hasSeries && hasUploads === true;
+  const isActuallyEmpty = !isLoading && !hasSeries && hasUploads === false;
 
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -153,6 +155,21 @@ export default function DashboardPage() {
       })
       .catch(() => setLeakage(null));
   }, [org?.id]);
+
+  useEffect(() => {
+    if (!org) return;
+    const checkUploads = async () => {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      const { count } = await supabase
+        .from('uploads')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', org.id)
+        .eq('status', 'ready');
+      setHasUploads((count ?? 0) > 0);
+    };
+    checkUploads();
+  }, [org]);
 
   const formatCurrency = (value: number): string =>
     new Intl.NumberFormat('en-US', {
@@ -229,8 +246,14 @@ export default function DashboardPage() {
             {greeting}
             {greetingSuffix} {greetingName}
           </h1>
-          {insight && (
-            <p className="mt-1.5 text-sm text-slate-500">{insight}</p>
+          {hasDataButNotInRange ? (
+            <p className="mt-1.5 text-sm text-slate-500">
+              Your data is connected. Choose a wider range above.
+            </p>
+          ) : (
+            insight && (
+              <p className="mt-1.5 text-sm text-slate-500">{insight}</p>
+            )
           )}
         </div>
 
@@ -301,7 +324,7 @@ export default function DashboardPage() {
           </div>
           <div className="h-80 rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-6" />
         </div>
-      ) : isEmpty ? (
+      ) : isActuallyEmpty ? (
         <motion.div
           className="mt-6 flex justify-center"
           initial={{ opacity: 0, y: 24 }}
@@ -329,6 +352,41 @@ export default function DashboardPage() {
               Connect Your Data
             </button>
             <p className="mt-3 text-xs text-slate-500">Takes about 2 minutes</p>
+          </div>
+        </motion.div>
+      ) : hasDataButNotInRange ? (
+        <motion.div
+          className="mt-6 flex justify-center"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="flex max-w-md flex-col items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
+              <Sparkles className="h-6 w-6 text-emerald-400" />
+            </div>
+            <h2 className="text-lg font-semibold tracking-tight">
+              No data in this time range
+            </h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Your data is connected, but there are no records in the selected period. Try a wider view.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                className="rounded-2xl bg-emerald-500 px-5 py-2.5 text-sm font-medium text-slate-950 hover:bg-emerald-600 transition"
+                onClick={() => handlePresetChange('30d')}
+              >
+                This month
+              </button>
+              <button
+                type="button"
+                className="rounded-2xl border border-zinc-700 px-5 py-2.5 text-sm font-medium text-slate-300 hover:bg-zinc-900 transition"
+                onClick={() => handlePresetChange('90d')}
+              >
+                This quarter
+              </button>
+            </div>
           </div>
         </motion.div>
       ) : (

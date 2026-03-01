@@ -114,10 +114,7 @@ export async function POST(request: Request) {
       messages,
     });
 
-    if (typeof result.toDataStreamResponse === 'function') {
-      return result.toDataStreamResponse();
-    }
-    return result.toTextStreamResponse();
+    return (result as { toDataStreamResponse: () => Response }).toDataStreamResponse();
   } catch (error) {
     console.error('CHAT_ERROR:', error);
     return new NextResponse('AI handler error', { status: 500 });

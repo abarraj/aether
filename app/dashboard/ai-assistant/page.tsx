@@ -45,7 +45,24 @@ export default function AIAssistantPage() {
   const initial = getInitialRange();
   const orgIds = org ? [org.id] : [];
   const { kpis } = useKpis(initial.period, initial.range, 0, orgIds);
-  const hasData = (kpis?.series?.length ?? 0) > 0;
+  const [uploadsExist, setUploadsExist] = useState(false);
+
+  useEffect(() => {
+    if (!org) return;
+    const check = async () => {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      const { count } = await supabase
+        .from('uploads')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', org.id)
+        .eq('status', 'ready');
+      setUploadsExist((count ?? 0) > 0);
+    };
+    check();
+  }, [org]);
+
+  const hasData = uploadsExist || (kpis?.series?.length ?? 0) > 0;
 
   const { messages, status, append } = useChat({
     api: '/api/chat',
