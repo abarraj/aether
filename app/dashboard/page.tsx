@@ -485,43 +485,6 @@ export default function DashboardPage() {
         <>
           {hasSeries && <FirstRunBanner />}
 
-          {/* AI Spotlight */}
-          {!isActuallyEmpty && (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                duration: 0.5,
-                delay: 0.15,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-              className="rounded-2xl border border-emerald-500/10 bg-gradient-to-r from-emerald-950/20 via-zinc-950 to-zinc-950 p-5"
-            >
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
-                  <Zap className="h-4 w-4 text-emerald-400" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-emerald-400">
-                    AI Briefing
-                  </div>
-                  {spotlightLoading ? (
-                    <div className="h-5 w-3/4 animate-pulse rounded bg-zinc-800" />
-                  ) : spotlight ? (
-                    <RichSpotlight
-                      text={spotlight}
-                      onNavigate={(path) => router.push(path)}
-                    />
-                  ) : (
-                    <p className="text-sm text-slate-400">
-                      Analyzing your business data…
-                    </p>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
           {/* Leakage + Targets Row */}
           {!isActuallyEmpty && (
             <motion.div
@@ -886,6 +849,46 @@ export default function DashboardPage() {
               </div>
             </div>
           </motion.div>
+
+          {/* AI Spotlight */}
+          {hasSeries && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.5,
+                delay: 0.15,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+              className="rounded-2xl border border-emerald-500/10 bg-gradient-to-r from-emerald-950/20 via-zinc-950 to-zinc-950 p-5"
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
+                  <Zap className="h-4 w-4 text-emerald-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-emerald-400">
+                    AI Briefing
+                  </div>
+                  {spotlightLoading ? (
+                    <div className="space-y-2">
+                      <div className="h-4 w-3/4 animate-pulse rounded bg-zinc-800" />
+                      <div className="h-4 w-1/2 animate-pulse rounded bg-zinc-800" />
+                    </div>
+                  ) : spotlight ? (
+                    <RichSpotlight
+                      text={spotlight}
+                      onNavigate={(path) => router.push(path)}
+                    />
+                  ) : (
+                    <p className="text-sm text-slate-500">
+                      Upload data to get your daily AI briefing.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
 
           {/* Row 4: Main chart */}
           <motion.div

@@ -6,16 +6,14 @@ import { buildDataContext } from '@/lib/ai/data-context';
 
 type ProfileOrg = { org_id: string | null };
 
-// Simple in-memory cache (resets on cold start, which is fine)
+// Simple in-memory cache
 const cache = new Map<string, { text: string; timestamp: number }>();
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 export async function GET() {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { data: profile } = await supabase
@@ -41,13 +39,12 @@ export async function GET() {
 
     const dataContext = await buildDataContext(orgId);
 
-    // If no meaningful data exists, return a default message
     if (!dataContext || dataContext.length < 100) {
       return NextResponse.json({ text: null });
     }
 
     const completion = await claudeClient.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 200,
       system:
         `You are the AI COO for ${org?.name ?? 'this business'}, a ${org?.industry ?? 'business'}. ` +
@@ -61,12 +58,7 @@ export async function GET() {
       messages: [
         {
           role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: `Here is the full operational context:\n\n${dataContext}\n\nWrite the morning briefing.`,
-            },
-          ],
+          content: [{ type: 'text', text: `Here is the full operational context:\n\n${dataContext}\n\nWrite the morning briefing.` }],
         },
       ],
     });
@@ -77,7 +69,6 @@ export async function GET() {
       .join('')
       .trim();
 
-    // Cache it
     cache.set(orgId, { text, timestamp: Date.now() });
 
     return NextResponse.json({ text });
