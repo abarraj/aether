@@ -157,6 +157,7 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
       dataType: DataType,
       mapping: Record<string, unknown> | null,
       ontology: OntologyConfig | null | undefined,
+      detectionResult?: Record<string, unknown> | null,
     ) => {
       if (!file) return;
 
@@ -171,6 +172,9 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
       }
       if (ontology?.entityTypeId && ontology?.nameColumn) {
         formData.append('ontology', JSON.stringify(ontology));
+      }
+      if (detectionResult != null) {
+        formData.append('detection', JSON.stringify(detectionResult));
       }
 
       const response = await fetch('/api/upload', {
@@ -213,13 +217,18 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
       mapping: Record<string, unknown>;
       ontology?: OntologyConfig | null;
     }) => {
-      void runUpload(payload.dataType, payload.mapping, payload.ontology ?? null);
+      void runUpload(
+        payload.dataType,
+        payload.mapping,
+        payload.ontology ?? null,
+        detection as unknown as Record<string, unknown> | null | undefined,
+      );
     },
-    [runUpload],
+    [runUpload, detection],
   );
 
   const handleUploadSimple = useCallback(() => {
-    void runUpload('Custom', null, null);
+    void runUpload('Custom', null, null, null);
   }, [runUpload]);
 
   if (!open) return null;
@@ -350,7 +359,14 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
                   autoMapping[detection.metrics.attendanceColumns[0]] = 'attendance';
                 }
                 const hasMapping = Object.keys(autoMapping).length > 0;
-                void runUpload('Custom', hasMapping ? autoMapping : null, null);
+                void runUpload(
+                  'Custom',
+                  hasMapping ? autoMapping : null,
+                  null,
+                  detection
+                    ? (detection as unknown as Record<string, unknown>)
+                    : undefined,
+                );
               }}
               >
                 {isUploading ? 'Importing…' : 'Looks good — import this'}

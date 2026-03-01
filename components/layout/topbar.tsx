@@ -1,13 +1,12 @@
 // Dashboard top bar with plan badge, notifications, and user avatar dropdown.
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell, ChevronDown } from 'lucide-react';
 
 import { useUser } from '@/hooks/use-user';
 import { createClient } from '@/lib/supabase/client';
-import { useRealtimeTable } from '@/hooks/use-realtime';
 
 interface TopbarProps {
   plan: string | null;
@@ -24,8 +23,6 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: To
     { id: string; title: string; severity: string; created_at: string }[]
   >([]);
   const { org } = useUser();
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const [secondsAgo, setSecondsAgo] = useState<number | null>(null);
   const router = useRouter();
 
   const planLabel = plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : 'Starter';
@@ -36,30 +33,6 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: To
     .map((segment) => segment[0]?.toUpperCase() ?? '')
     .join('');
 
-  const { status: realtimeStatus, lastEventAt } = useRealtimeTable(
-    'kpi_snapshots',
-    org ? { column: 'org_id', value: org.id } : undefined,
-  );
-
-  useEffect(() => {
-    if (lastEventAt) {
-      setLastUpdatedAt(lastEventAt);
-      setSecondsAgo(0);
-    }
-  }, [lastEventAt]);
-
-  useEffect(() => {
-    if (!lastUpdatedAt) return;
-    const update = () => {
-      const diffSeconds = Math.floor(
-        (Date.now() - lastUpdatedAt.getTime()) / 1000,
-      );
-      setSecondsAgo(diffSeconds);
-    };
-    update();
-    const id = window.setInterval(update, 10_000);
-    return () => window.clearInterval(id);
-  }, [lastUpdatedAt]);
   return (
     <div className="h-16 border-b border-zinc-800 bg-[#0A0A0A]/90 backdrop-blur-md flex items-center px-8 relative">
       <div className="text-sm text-slate-400 font-medium">
@@ -67,23 +40,6 @@ export function Topbar({ plan, userName, onSignOut, alertsCount = 0, title }: To
       </div>
 
       <div className="ml-auto flex items-center gap-4">
-        {realtimeStatus === 'connected' ? (
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Live</span>
-            {secondsAgo != null && (
-              <span className="text-[11px] text-slate-600">
-                · {secondsAgo === 0 ? 'just now' : `${secondsAgo}s ago`}
-              </span>
-            )}
-          </div>
-        ) : realtimeStatus === 'connecting' ? (
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-            <span>Connecting…</span>
-          </div>
-        ) : null}
-
         <span className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
           {planLabel} plan
         </span>

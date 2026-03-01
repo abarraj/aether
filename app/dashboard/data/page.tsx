@@ -3,7 +3,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, FileSpreadsheet, Loader2, Link2, Plus, Trash2 } from 'lucide-react';
+import { Database, FileSpreadsheet, Link2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -35,16 +35,15 @@ export default function DataPage() {
   const [googleSheetsOpen, setGoogleSheetsOpen] = useState<boolean>(false);
   const [uploadToDelete, setUploadToDelete] = useState<UploadRow | null>(null);
   const [confirmFilename, setConfirmFilename] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (!uploadToDelete) return;
     const onEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isDeleting) handleCloseDeleteModal();
+      if (e.key === 'Escape') handleCloseDeleteModal();
     };
     document.addEventListener('keydown', onEscape);
     return () => document.removeEventListener('keydown', onEscape);
-  }, [uploadToDelete, isDeleting]);
+  }, [uploadToDelete]);
 
   const loadUploads = useCallback(async () => {
     if (!org) return;
@@ -82,10 +81,8 @@ export default function DataPage() {
   };
 
   const handleCloseDeleteModal = () => {
-    if (!isDeleting) {
-      setUploadToDelete(null);
-      setConfirmFilename('');
-    }
+    setUploadToDelete(null);
+    setConfirmFilename('');
   };
 
   const handleConfirmDelete = async () => {
@@ -94,161 +91,95 @@ export default function DataPage() {
 
     const supabase = createClient();
     const { id, file_name, file_path } = uploadToDelete;
-    setIsDeleting(true);
 
-    let storageFailed = false;
-    try {
-      await supabase.storage.from('uploads').remove([file_path]);
-    } catch {
-      storageFailed = true;
-    }
+    // Immediately close modal and update UI
+    setUploadToDelete(null);
+    setConfirmFilename('');
+    setUploads((prev) => prev.filter((u) => u.id !== id));
+    toast.success(`${file_name} removed.`);
 
-    const errors: string[] = [];
-    let uploadDeleted = false;
-
-    try {
-      // 1. Get entity IDs that belong to this upload (before we delete entities)
-      const { data: entitiesToDelete } = await supabase
-        .from('entities')
-        .select('id')
-        .eq('source_upload_id', id);
-      const entityIds: string[] = (entitiesToDelete ?? []).map((e) => e.id);
-
-      // 2. Delete entity_relationships where either endpoint is one of these entities
-      if (entityIds.length > 0) {
-        const { error: relFromErr } = await supabase
-          .from('entity_relationships')
-          .delete()
-          .eq('org_id', org.id)
-          .in('from_entity_id', entityIds);
-        if (relFromErr) errors.push('entity relationships (from)');
-        const { error: relToErr } = await supabase
-          .from('entity_relationships')
-          .delete()
-          .eq('org_id', org.id)
-          .in('to_entity_id', entityIds);
-        if (relToErr) errors.push('entity relationships (to)');
-      }
-
-      // 3. Delete data_rows for this upload
-      const { error: dataRowsError } = await supabase
-        .from('data_rows')
-        .delete()
-        .eq('upload_id', id)
-        .eq('org_id', org.id);
-      if (dataRowsError) errors.push('data rows');
-
-      // 4. Delete entities for this upload
-      const { error: entitiesError } = await supabase
-        .from('entities')
-        .delete()
-        .eq('source_upload_id', id);
-      if (entitiesError) errors.push('entities');
-
-      // 5. Delete ALL kpi_snapshots for the org (recomputed from remaining uploads if any)
-      const { error: snapshotsError } = await supabase
-        .from('kpi_snapshots')
-        .delete()
-        .eq('org_id', org.id);
-      if (snapshotsError) errors.push('KPI snapshots');
-
-      // Delete performance_gaps for this upload
+    // Run cleanup in background (user doesn't wait)
+    (async () => {
       try {
+        await supabase.storage.from('uploads').remove([file_path]).catch(() => {});
+
+        const { data: entitiesToDelete } = await supabase
+          .from('entities')
+          .select('id')
+          .eq('source_upload_id', id);
+        const entityIds = (entitiesToDelete ?? []).map((e) => e.id);
+
+        if (entityIds.length > 0) {
+          await supabase
+            .from('entity_relationships')
+            .delete()
+            .eq('org_id', org.id)
+            .in('from_entity_id', entityIds);
+          await supabase
+            .from('entity_relationships')
+            .delete()
+            .eq('org_id', org.id)
+            .in('to_entity_id', entityIds);
+        }
+
         await supabase
-          .from('performance_gaps')
+          .from('data_rows')
           .delete()
-          .eq('upload_id', id);
-      } catch {
-        // Table may not exist yet
-      }
-
-      // 6. Orphan cleanup: delete relationship_types that have no remaining entity_relationships
-      const { data: usedRelTypeIds } = await supabase
-        .from('entity_relationships')
-        .select('relationship_type_id')
-        .eq('org_id', org.id);
-      const usedRelTypeIdSet = new Set(
-        (usedRelTypeIds ?? []).map((r) => r.relationship_type_id),
-      );
-      const { data: allRelTypes } = await supabase
-        .from('relationship_types')
-        .select('id')
-        .eq('org_id', org.id);
-      for (const rt of allRelTypes ?? []) {
-        if (!usedRelTypeIdSet.has(rt.id)) {
-          const { error: rtErr } = await supabase
-            .from('relationship_types')
-            .delete()
-            .eq('id', rt.id)
-            .eq('org_id', org.id);
-          if (rtErr) errors.push('orphan relationship types');
+          .eq('upload_id', id)
+          .eq('org_id', org.id);
+        await supabase.from('entities').delete().eq('source_upload_id', id);
+        await supabase.from('kpi_snapshots').delete().eq('org_id', org.id);
+        try {
+          await supabase.from('performance_gaps').delete().eq('upload_id', id);
+        } catch {
+          // performance_gaps table may not exist
         }
-      }
 
-      // 7. Orphan cleanup: delete entity_types that have no remaining entities
-      const { data: usedEntityTypeIds } = await supabase
-        .from('entities')
-        .select('entity_type_id')
-        .eq('org_id', org.id);
-      const usedEntityTypeIdSet = new Set(
-        (usedEntityTypeIds ?? []).map((e) => e.entity_type_id),
-      );
-      const { data: allEntityTypes } = await supabase
-        .from('entity_types')
-        .select('id')
-        .eq('org_id', org.id);
-      for (const et of allEntityTypes ?? []) {
-        if (!usedEntityTypeIdSet.has(et.id)) {
-          const { error: etErr } = await supabase
-            .from('entity_types')
-            .delete()
-            .eq('id', et.id)
-            .eq('org_id', org.id);
-          if (etErr) errors.push('orphan entity types');
+        const { data: usedRelTypeIds } = await supabase
+          .from('entity_relationships')
+          .select('relationship_type_id')
+          .eq('org_id', org.id);
+        const usedRelSet = new Set(
+          (usedRelTypeIds ?? []).map((r) => r.relationship_type_id),
+        );
+        const { data: allRelTypes } = await supabase
+          .from('relationship_types')
+          .select('id')
+          .eq('org_id', org.id);
+        for (const rt of allRelTypes ?? []) {
+          if (!usedRelSet.has(rt.id)) {
+            await supabase
+              .from('relationship_types')
+              .delete()
+              .eq('id', rt.id)
+              .eq('org_id', org.id);
+          }
         }
-      }
 
-      // 8. Finally delete the upload record
-      const { error: uploadsError } = await supabase
-        .from('uploads')
-        .delete()
-        .eq('id', id)
-        .eq('org_id', org.id);
-      if (uploadsError) {
-        errors.push('upload record');
-      } else {
-        uploadDeleted = true;
-      }
-    } catch (e) {
-      errors.push(String(e));
-    }
+        const { data: usedEtIds } = await supabase
+          .from('entities')
+          .select('entity_type_id')
+          .eq('org_id', org.id);
+        const usedEtSet = new Set((usedEtIds ?? []).map((e) => e.entity_type_id));
+        const { data: allEts } = await supabase
+          .from('entity_types')
+          .select('id')
+          .eq('org_id', org.id);
+        for (const et of allEts ?? []) {
+          if (!usedEtSet.has(et.id)) {
+            await supabase
+              .from('entity_types')
+              .delete()
+              .eq('id', et.id)
+              .eq('org_id', org.id);
+          }
+        }
 
-    if (errors.length > 0) {
-      toast.error(
-        `Cleanup had issues: ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? '…' : ''}. Some data may remain.`,
-      );
-    }
-    if (uploadDeleted) {
-      try {
-        await fetch('/api/audit/log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'data.delete',
-            targetType: 'upload',
-            targetId: id,
-            description: `Deleted data source: ${file_name}`,
-          }),
-        });
-      } catch {
-        // non-blocking
+        await supabase.from('uploads').delete().eq('id', id).eq('org_id', org.id);
+      } catch (err) {
+        console.error('Background delete cleanup error:', err);
       }
-      toast.success('Data file removed');
-      setUploadToDelete(null);
-      setConfirmFilename('');
-    }
-    setIsDeleting(false);
-    await refreshUploads();
+    })();
   };
 
   const renderStatusBadge = (status: UploadStatus) => {
@@ -446,7 +377,6 @@ export default function DataPage() {
                 onChange={(e) => setConfirmFilename(e.target.value)}
                 placeholder={uploadToDelete.file_name}
                 className="mt-1.5 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600"
-                disabled={isDeleting}
                 autoComplete="off"
               />
               <div className="mt-6 flex w-full gap-3">
@@ -455,7 +385,6 @@ export default function DataPage() {
                   variant="outline"
                   className="rounded-2xl border-zinc-700 px-5 py-2.5 text-sm text-slate-300 hover:bg-zinc-800"
                   onClick={handleCloseDeleteModal}
-                  disabled={isDeleting}
                 >
                   Cancel
                 </Button>
@@ -463,18 +392,9 @@ export default function DataPage() {
                   type="button"
                   className="rounded-2xl bg-rose-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-rose-600 disabled:pointer-events-none disabled:opacity-50"
                   onClick={handleConfirmDelete}
-                  disabled={
-                    isDeleting || confirmFilename.trim() !== uploadToDelete.file_name
-                  }
+                  disabled={confirmFilename.trim() !== uploadToDelete.file_name}
                 >
-                  {isDeleting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Deleting...
-                    </>
-                  ) : (
-                    'Permanently delete'
-                  )}
+                  Permanently delete
                 </Button>
               </div>
             </div>
