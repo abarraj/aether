@@ -91,6 +91,7 @@ export default function PerformancePage() {
 
   const [data, setData] = useState<MatrixData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [uploadsExist, setUploadsExist] = useState(false);
   const [activeDimension, setActiveDimension] = useState<string | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<EntitySummary | null>(
     null,
@@ -126,6 +127,21 @@ export default function PerformancePage() {
       .catch(() => setData(null))
       .finally(() => setIsLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!effectiveOrg) return;
+    const check = async () => {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      const { count } = await supabase
+        .from('uploads')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', effectiveOrg.id)
+        .eq('status', 'ready');
+      setUploadsExist((count ?? 0) > 0);
+    };
+    check();
+  }, [effectiveOrg]);
 
   useEffect(() => {
     if (data?.dimensions?.length && !activeDimension) {
@@ -194,18 +210,21 @@ export default function PerformancePage() {
             <BarChart3 className="h-7 w-7 text-slate-400" />
           </div>
           <h2 className="text-lg font-semibold tracking-tight text-slate-100">
-            Performance data loading
+            {uploadsExist
+              ? 'Performance data processing'
+              : 'Performance data loading'}
           </h2>
           <p className="mt-2 text-sm text-slate-400">
-            Upload a spreadsheet with revenue data to see where you&apos;re
-            leaving money on the table.
+            {uploadsExist
+              ? 'Your data is connected. Delete and re-upload your spreadsheet to generate performance insights.'
+              : "Upload a spreadsheet with revenue data to see where you're leaving money on the table."}
           </p>
           <button
             type="button"
             onClick={() => router.push('/dashboard/data')}
             className="mt-6 rounded-2xl bg-emerald-500 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-emerald-600"
           >
-            Connect Data
+            {uploadsExist ? 'Go to Connected Data' : 'Connect Data'}
           </button>
         </div>
       </motion.div>

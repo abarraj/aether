@@ -195,17 +195,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to finalize upload.' }, { status: 500 });
     }
 
-    // Process KPI snapshots (fast — ~1s)
+    // Step 1: Process KPI snapshots
     await processUploadData(orgId, uploadRecord.id);
 
-    // Compute performance gaps (fast — ~1s)
-    try {
-      await computePerformanceGaps(orgId, uploadRecord.id);
-    } catch (gapErr) {
-      console.error('Performance gap computation failed:', gapErr);
-    }
-
-    // Build ontology from detection passed by client (NO Claude API call needed)
+    // Step 2: Build ontology FIRST (gap engine needs entity_types)
     const detectionRaw = formData.get('detection');
     if (
       typeof detectionRaw === 'string' &&
@@ -274,7 +267,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Mark as ready
+    // Step 3: Compute performance gaps AFTER ontology exists
+    try {
+      await computePerformanceGaps(orgId, uploadRecord.id);
+    } catch (gapErr) {
+      console.error('Performance gap computation failed:', gapErr);
+    }
+
+    // Step 4: Mark as ready
     await supabase
       .from('uploads')
       .update({ status: 'ready' })
