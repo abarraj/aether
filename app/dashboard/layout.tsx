@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
+  BarChart3,
   FileSpreadsheet,
   Network,
   MessageSquare,
@@ -47,6 +48,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
+    { icon: BarChart3, label: 'Performance', href: '/dashboard/performance' },
     { icon: FileSpreadsheet, label: 'Connected Data', href: '/dashboard/data' },
     { icon: Network, label: 'Your Business', href: '/dashboard/data-model' },
     { icon: MessageSquare, label: 'AI Assistant', href: '/dashboard/ai-assistant' },
@@ -117,6 +119,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const pageLabels: Record<string, string> = {
     '/dashboard': 'Dashboard',
+    '/dashboard/performance': 'Performance',
     '/dashboard/data': 'Connected Data',
     '/dashboard/data-model': 'Your Business',
     '/dashboard/ai-assistant': 'AI Assistant',
