@@ -13,7 +13,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { Sparkles, Info, ChevronRight } from 'lucide-react';
+import { Sparkles, Info, ChevronRight, Target, Activity, Zap } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 
 import { useUser } from '@/hooks/use-user';
@@ -43,6 +43,59 @@ type ActionTarget = {
   created_at: string;
 };
 
+type FeedItem = {
+  type: 'audit' | 'alert' | 'target';
+  title: string;
+  subtitle: string | null;
+  severity: string | null;
+  timestamp: string;
+};
+
+function formatRelativeTime(timestamp: string): string {
+  const now = Date.now();
+  const then = new Date(timestamp).getTime();
+  const diff = now - then;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return format(new Date(timestamp), 'MMM d');
+}
+
+function RichSpotlight({
+  text,
+  onNavigate,
+}: {
+  text: string;
+  onNavigate: (path: string) => void;
+}) {
+  const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+  return (
+    <p className="text-sm leading-relaxed text-slate-300">
+      {parts.map((part, i) => {
+        const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        if (linkMatch) {
+          const [, label, path] = linkMatch;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onNavigate(path)}
+              className="mx-0.5 inline-flex items-center gap-0.5 text-emerald-400 underline underline-offset-2 transition-colors hover:text-emerald-300"
+            >
+              {label}
+            </button>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </p>
+  );
+}
+
 function getInitialRange(): { period: Period; preset: RangePreset; range: DateRange } {
   const end = new Date();
   const start = subDays(end, 6);
@@ -69,10 +122,16 @@ export default function DashboardPage() {
   const [leakage, setLeakage] = useState<{
     weekStart: string;
     totalLeakage: number;
-    topLeakage: { dimension_value: string; gap_value: number }[];
+    topLeakage: { dimension_value: string; gap_value: number; gap_pct?: number | null }[];
   } | null>(null);
   const [hasUploads, setHasUploads] = useState<boolean | null>(null);
-  const [activeTargets, setActiveTargets] = useState<ActionTarget[]>([]);
+  const [targets, setTargets] = useState<ActionTarget[]>([]);
+  const [spotlight, setSpotlight] = useState<string | null>(null);
+  const [spotlightLoading, setSpotlightLoading] = useState(true);
+  const [activityFeed, setActivityFeed] = useState<FeedItem[]>([]);
+  const [topLeakers, setTopLeakers] = useState<
+    { value: string; gap: number; pct: number | null }[]
+  >([]);
 
   const effectiveOrgIds =
     activeOrgIds.length > 0 ? activeOrgIds : org ? [org.id] : [];
@@ -161,10 +220,17 @@ export default function DashboardPage() {
             weekStart: data.weekStart,
             totalLeakage: Number(data.totalLeakage ?? 0) || 0,
             topLeakage: Array.isArray(data.topLeakage)
-              ? data.topLeakage.slice(0, 5).map((r: { dimension_value?: string; gap_value?: number }) => ({
-                  dimension_value: String(r.dimension_value ?? ''),
-                  gap_value: Number(r.gap_value ?? 0),
-                }))
+              ? data.topLeakage.slice(0, 5).map(
+                  (r: {
+                    dimension_value?: string;
+                    gap_value?: number;
+                    gap_pct?: number | null;
+                  }) => ({
+                    dimension_value: String(r.dimension_value ?? ''),
+                    gap_value: Number(r.gap_value ?? 0),
+                    gap_pct: r.gap_pct != null ? Number(r.gap_pct) : null,
+                  }),
+                )
               : [],
           });
         } else {
@@ -174,16 +240,59 @@ export default function DashboardPage() {
       .catch(() => setLeakage(null));
   }, [org?.id]);
 
+  // AI Spotlight
   useEffect(() => {
+    if (!org) return;
+    setSpotlightLoading(true);
+    fetch('/api/ai/spotlight')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setSpotlight(data?.text ?? null))
+      .catch(() => setSpotlight(null))
+      .finally(() => setSpotlightLoading(false));
+  }, [org?.id]);
+
+  // Active targets
+  useEffect(() => {
+    if (!org) return;
     fetch('/api/targets')
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { targets?: ActionTarget[] } | null) => {
         if (data?.targets) {
-          setActiveTargets(data.targets.filter((t) => t.status === 'active'));
+          setTargets(data.targets.filter((t) => t.status === 'active'));
         }
       })
       .catch(() => {});
-  }, []);
+  }, [org?.id]);
+
+  // Activity feed
+  useEffect(() => {
+    if (!org) return;
+    fetch('/api/activity')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setActivityFeed(data?.items ?? []))
+      .catch(() => {});
+  }, [org?.id]);
+
+  // Top leakers (from existing leakage data)
+  useEffect(() => {
+    if (leakage?.topLeakage && leakage.topLeakage.length > 0) {
+      setTopLeakers(
+        leakage.topLeakage.map(
+          (r: {
+            dimension_value: string;
+            gap_value: number;
+            gap_pct?: number | null;
+          }) => ({
+            value: r.dimension_value,
+            gap: Number(r.gap_value),
+            pct: r.gap_pct != null ? Number(r.gap_pct) : null,
+          }),
+        ),
+      );
+    } else {
+      setTopLeakers([]);
+    }
+  }, [leakage]);
 
   useEffect(() => {
     if (!org) return;
@@ -240,6 +349,18 @@ export default function DashboardPage() {
     return `Tracking ${kpis.series.length} days of operational data.`;
   }, [kpis]);
 
+  const alertCount = activityFeed.filter((f) => f.type === 'alert').length;
+  const targetCount = targets.length;
+  const insightParts: string[] = [];
+  if (insight) insightParts.push(insight);
+  if (targetCount > 0)
+    insightParts.push(
+      `${targetCount} active target${targetCount > 1 ? 's' : ''}.`,
+    );
+  if (alertCount > 0)
+    insightParts.push(`${alertCount} alert${alertCount > 1 ? 's' : ''} need you.`);
+  const fullInsight = insightParts.join(' ');
+
   const laborChange = kpis?.changes.laborCostPct ?? null;
   const capacityChange = kpis?.changes.utilizationPct ?? null;
 
@@ -280,8 +401,8 @@ export default function DashboardPage() {
               Your data is connected. Choose a wider range above.
             </p>
           ) : (
-            insight && (
-              <p className="mt-1.5 text-sm text-slate-500">{insight}</p>
+            fullInsight && (
+              <p className="mt-1.5 text-sm text-slate-500">{fullInsight}</p>
             )
           )}
         </div>
@@ -421,100 +542,191 @@ export default function DashboardPage() {
       ) : (
         <>
           {hasSeries && <FirstRunBanner />}
-          {/* Leakage this week */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 px-5 py-4 cursor-pointer transition-all hover:border-emerald-500/30 hover:shadow-[0_0_20px_rgba(16,185,129,0.04)] group"
-            onClick={() => router.push('/dashboard/performance')}
-          >
-            <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
-              Leakage this week
-            </div>
-            <div className="mt-1.5 flex items-baseline justify-between gap-4">
-              <div className="text-2xl font-bold tracking-tighter text-white">
-                {leakage && leakage.totalLeakage > 0 ? (
-                  <AnimatedNumber
-                    value={leakage.totalLeakage}
-                    options={{
-                      style: 'currency',
-                      currency: org?.currency ?? 'USD',
-                      maximumFractionDigits: 0,
-                    }}
-                  />
-                ) : (
-                  '—'
-                )}
-              </div>
-              {leakage?.weekStart && (
-                <span className="text-[11px] text-slate-500">
-                  {leakage.totalLeakage > 0 && leakage.topLeakage[0]?.dimension_value ? (
-                    <>
-                      Biggest leak:{' '}
-                      <button
-                        type="button"
-                        className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(
-                            `/dashboard/performance?entity=${encodeURIComponent(leakage.topLeakage[0].dimension_value)}`,
-                          );
-                        }}
-                      >
-                        {leakage.topLeakage[0].dimension_value}
-                      </button>
-                    </>
-                  ) : (
-                    <>Week of {format(new Date(leakage.weekStart), 'MMM d')}</>
-                  )}
-                </span>
-              )}
-            </div>
-            <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-600 group-hover:text-emerald-400 transition-colors">
-              <span>View performance breakdown</span>
-              <ChevronRight className="h-3 w-3" />
-            </div>
-          </motion.div>
 
-          {activeTargets.length > 0 && (
+          {/* AI Spotlight */}
+          {!isActuallyEmpty && (
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-              className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 px-5 py-4"
+              transition={{
+                duration: 0.5,
+                delay: 0.15,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+              className="rounded-2xl border border-emerald-500/10 bg-gradient-to-r from-emerald-950/20 via-zinc-950 to-zinc-950 p-5"
             >
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Active Targets
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
+                  <Zap className="h-4 w-4 text-emerald-400" />
                 </div>
-                <span className="text-xs text-slate-600">
-                  {activeTargets.length} active
-                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-emerald-400">
+                    AI Briefing
+                  </div>
+                  {spotlightLoading ? (
+                    <div className="h-5 w-3/4 animate-pulse rounded bg-zinc-800" />
+                  ) : spotlight ? (
+                    <RichSpotlight
+                      text={spotlight}
+                      onNavigate={(path) => router.push(path)}
+                    />
+                  ) : (
+                    <p className="text-sm text-slate-400">
+                      Analyzing your business data…
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="mt-3 space-y-2.5">
-                {activeTargets.slice(0, 3).map((target) => (
-                  <button
-                    key={target.id}
-                    type="button"
-                    onClick={() =>
-                      router.push(
-                        `/dashboard/performance?entity=${encodeURIComponent(target.dimension_value)}`,
-                      )
-                    }
-                    className="w-full flex items-center gap-3 rounded-xl bg-zinc-900/50 px-3 py-2.5 text-left hover:bg-zinc-800/50 transition-colors group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-slate-200 truncate">
-                        {target.dimension_value}
-                      </div>
-                      <div className="text-[11px] text-slate-500 truncate">
-                        {target.title}
-                      </div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-slate-600 group-hover:text-emerald-400 transition-colors flex-shrink-0" />
-                  </button>
-                ))}
+            </motion.div>
+          )}
+
+          {/* Leakage + Targets Row */}
+          {!isActuallyEmpty && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.5,
+                delay: 0.2,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+              className="grid grid-cols-1 gap-4 lg:grid-cols-2"
+            >
+              {/* Leakage with mini bars */}
+              <div
+                className="cursor-pointer rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5 transition-all hover:border-rose-500/20 group"
+                onClick={() => router.push('/dashboard/performance')}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                    Revenue Leakage
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-slate-600 transition-colors group-hover:text-rose-400" />
+                </div>
+                <div className="mt-2 text-2xl font-bold tracking-tighter text-rose-400">
+                  {leakage && leakage.totalLeakage > 0 ? (
+                    <AnimatedNumber
+                      value={leakage.totalLeakage}
+                      options={{
+                        style: 'currency',
+                        currency: org?.currency ?? 'USD',
+                        maximumFractionDigits: 0,
+                      }}
+                    />
+                  ) : (
+                    '—'
+                  )}
+                </div>
+                {topLeakers.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {topLeakers.slice(0, 5).map((leaker) => {
+                      const maxGap = topLeakers[0]?.gap ?? 1;
+                      const widthPct = Math.max(
+                        8,
+                        (leaker.gap / maxGap) * 100,
+                      );
+                      return (
+                        <div
+                          key={leaker.value}
+                          className="flex items-center gap-3"
+                        >
+                          <span className="w-28 flex-shrink-0 truncate text-[11px] text-slate-400">
+                            {leaker.value}
+                          </span>
+                          <div className="h-2 flex-1 rounded-full bg-zinc-800/50">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${widthPct}%`,
+                                backgroundColor:
+                                  leaker.pct != null && leaker.pct > 50
+                                    ? '#ef4444'
+                                    : leaker.pct != null && leaker.pct > 30
+                                      ? '#f97316'
+                                      : '#eab308',
+                              }}
+                            />
+                          </div>
+                          <span className="w-16 flex-shrink-0 text-right text-[11px] text-slate-500">
+                            {formatCurrency(leaker.gap)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Active Targets */}
+              <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                    Active Targets
+                  </span>
+                  <span className="text-[11px] text-slate-600">
+                    {targets.length} active
+                  </span>
+                </div>
+                {targets.length > 0 ? (
+                  <div className="mt-4 space-y-3">
+                    {targets.slice(0, 4).map((target) => {
+                      const progress =
+                        target.baseline_gap > 0 &&
+                        target.current_pct_change != null
+                          ? Math.min(
+                              100,
+                              Math.max(
+                                0,
+                                (Math.abs(target.current_pct_change) /
+                                  (target.target_pct || 50)) *
+                                  100,
+                              ),
+                            )
+                          : 0;
+                      return (
+                        <button
+                          key={target.id}
+                          type="button"
+                          onClick={() =>
+                            router.push(
+                              `/dashboard/performance?entity=${encodeURIComponent(target.dimension_value)}`,
+                            )
+                          }
+                          className="group w-full text-left"
+                        >
+                          <div className="mb-1 flex items-center justify-between">
+                            <span className="truncate text-sm text-slate-200 transition-colors group-hover:text-emerald-400">
+                              {target.dimension_value}
+                            </span>
+                            <span className="ml-2 flex-shrink-0 text-[11px] text-slate-500">
+                              {Math.round(progress)}%
+                            </span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-zinc-800">
+                            <div
+                              className="h-full rounded-full bg-emerald-500 transition-all"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-4 flex flex-col items-center justify-center py-6 text-center">
+                    <Target className="mb-2 h-5 w-5 text-slate-600" />
+                    <p className="text-xs text-slate-500">
+                      No active targets yet
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/dashboard/performance')}
+                      className="mt-2 text-xs text-emerald-400 underline underline-offset-2 hover:text-emerald-300"
+                    >
+                      Set one in Performance
+                    </button>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -852,6 +1064,60 @@ export default function DashboardPage() {
               </ResponsiveContainer>
             </div>
           </motion.div>
+
+          {/* Activity Feed */}
+          {!isActuallyEmpty && activityFeed.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.5,
+                delay: 0.3,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+              className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5"
+            >
+              <div className="mb-4 flex items-center gap-2">
+                <Activity className="h-4 w-4 text-slate-500" />
+                <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Recent Activity
+                </span>
+              </div>
+              <div className="space-y-0">
+                {activityFeed.slice(0, 8).map((item, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 border-b border-zinc-800/40 py-2.5 last:border-0"
+                  >
+                    <div
+                      className={cn(
+                        'mt-1 h-2 w-2 flex-shrink-0 rounded-full',
+                        item.type === 'alert'
+                          ? item.severity === 'critical'
+                            ? 'bg-rose-500'
+                            : item.severity === 'warning'
+                              ? 'bg-amber-500'
+                              : 'bg-blue-500'
+                          : item.type === 'target'
+                            ? item.severity === 'success'
+                              ? 'bg-emerald-500'
+                              : 'bg-emerald-400'
+                            : 'bg-zinc-600',
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-slate-300">
+                        {item.title}
+                      </p>
+                    </div>
+                    <span className="flex-shrink-0 whitespace-nowrap text-[11px] text-slate-600">
+                      {formatRelativeTime(item.timestamp)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
         </>
       )}
     </div>
