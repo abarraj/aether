@@ -10,7 +10,9 @@ import {
   X,
   BarChart3,
   Sparkles,
+  Target,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import {
   BarChart,
@@ -66,6 +68,20 @@ type MatrixData = {
       gap: number;
     } | null;
   } | null;
+};
+
+type ActionTarget = {
+  id: string;
+  dimension_field: string;
+  dimension_value: string;
+  target_pct: number;
+  baseline_gap: number;
+  current_gap: number | null;
+  current_pct_change: number | null;
+  status: string;
+  deadline: string | null;
+  title: string | null;
+  created_at: string;
 };
 
 function gapColor(pct: number | null | undefined): string {
@@ -132,6 +148,7 @@ function PerformancePageInner() {
     gap: number;
     pct: number | null;
   } | null>(null);
+  const [targets, setTargets] = useState<Record<string, ActionTarget>>({});
 
   useEffect(() => {
     fetch('/api/metrics/gaps/matrix')
@@ -152,6 +169,22 @@ function PerformancePageInner() {
       })
       .catch(() => setData(null))
       .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/targets')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { targets?: ActionTarget[] } | null) => {
+        if (data?.targets) {
+          const map: Record<string, ActionTarget> = {};
+          for (const t of data.targets) {
+            const key = `${t.dimension_field}::${t.dimension_value}`;
+            if (!map[key] || t.status === 'active') map[key] = t;
+          }
+          setTargets(map);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -441,9 +474,17 @@ function PerformancePageInner() {
                     );
                     if (ent) setSelectedEntity(ent);
                   }}
-                  className="rounded-lg bg-transparent py-2 pr-2 text-left text-xs font-medium text-slate-200 hover:bg-zinc-800/50"
+                  className="rounded-lg bg-transparent py-2 pr-2 text-left text-xs font-medium text-slate-200 hover:bg-zinc-800/50 flex items-center gap-1.5 min-w-0"
                 >
-                  {val}
+                  <span className="truncate text-slate-300">{val}</span>
+                  {targets[`${activeDimension}::${val}`]?.status === 'active' && (
+                    <span
+                      className="flex-shrink-0 h-4 w-4 rounded-full bg-emerald-500/10 flex items-center justify-center"
+                      title="Active target"
+                    >
+                      <Target className="h-2.5 w-2.5 text-emerald-400" />
+                    </span>
+                  )}
                 </button>
                 {data!.weeks.map((week) => {
                   const cell =
@@ -549,9 +590,17 @@ function PerformancePageInner() {
                   #{idx + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-slate-100">
-                    {entity.value}
-                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="truncate font-medium text-slate-100">
+                      {entity.value}
+                    </p>
+                    {targets[`${entity.field}::${entity.value}`]?.status === 'active' && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                        <Target className="h-2.5 w-2.5" />
+                        Target set
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-zinc-800/50">
                     <div
                       className={cn(
@@ -788,6 +837,115 @@ function PerformancePageInner() {
                     Ask AI about {selectedEntity?.value}
                   </button>
                 </div>
+                {(() => {
+                  const targetKey = `${selectedEntity!.field}::${selectedEntity!.value}`;
+                  const existingTarget = targets[targetKey];
+
+                  if (existingTarget && existingTarget.status === 'active') {
+                    return (
+                      <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-medium uppercase tracking-wider text-emerald-400">
+                            Active Target
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await fetch(`/api/targets/${existingTarget.id}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ status: 'completed' }),
+                              });
+                              setTargets((prev) => {
+                                const next = { ...prev };
+                                next[targetKey] = { ...existingTarget, status: 'completed' };
+                                return next;
+                              });
+                              toast.success('Target marked complete');
+                            }}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 underline"
+                          >
+                            Mark complete
+                          </button>
+                        </div>
+                        <div className="mt-2 text-sm text-slate-200">
+                          {existingTarget.title ?? `Reduce gap by ${existingTarget.target_pct}%`}
+                        </div>
+                        {existingTarget.deadline && (
+                          <div className="mt-1 text-xs text-slate-500">
+                            Deadline: {format(parseISO(existingTarget.deadline), 'MMM d, yyyy')}
+                          </div>
+                        )}
+                        <div className="mt-3">
+                          <div className="flex justify-between text-[11px] text-slate-500 mb-1">
+                            <span>
+                              Baseline: $
+                              {Math.round(existingTarget.baseline_gap).toLocaleString()} gap
+                            </span>
+                            <span>Target: {existingTarget.target_pct}% reduction</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-zinc-800">
+                            <div
+                              className="h-full rounded-full bg-emerald-500 transition-all"
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.max(
+                                    0,
+                                    existingTarget.current_pct_change != null
+                                      ? (Math.abs(existingTarget.current_pct_change) /
+                                          (existingTarget.target_pct || 50)) *
+                                        100
+                                      : 0,
+                                  ),
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const gap = selectedEntity!.totalGap;
+                          const targetKey = `${selectedEntity!.field}::${selectedEntity!.value}`;
+                          const res = await fetch('/api/targets', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              dimension_field: selectedEntity!.field,
+                              dimension_value: selectedEntity!.value,
+                              target_pct: 50,
+                              baseline_gap: gap,
+                              deadline: format(
+                                new Date(Date.now() + 28 * 24 * 60 * 60 * 1000),
+                                'yyyy-MM-dd',
+                              ),
+                              title: `Close 50% of ${selectedEntity!.value}'s revenue gap`,
+                            }),
+                          });
+                          if (res.ok) {
+                            const data = (await res.json()) as { target: ActionTarget };
+                            setTargets((prev) => ({
+                              ...prev,
+                              [targetKey]: data.target,
+                            }));
+                            toast.success("Target set — we'll track this for you");
+                          }
+                        }}
+                        className="w-full flex items-center justify-center gap-2 rounded-2xl border border-zinc-700 px-4 py-3 text-sm font-medium text-slate-300 hover:bg-zinc-900 hover:border-zinc-600 transition-colors"
+                      >
+                        <Target className="h-4 w-4" />
+                        Set recovery target
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             </motion.div>
           </>

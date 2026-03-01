@@ -493,6 +493,44 @@ export async function buildDataContext(orgId: string): Promise<string> {
     }
   }
 
+  // Add active targets context
+  try {
+    const { data: targetRows } = await supabase
+      .from('action_targets')
+      .select(
+        'dimension_field, dimension_value, target_pct, baseline_gap, current_gap, status, deadline, title',
+      )
+      .eq('org_id', orgId)
+      .eq('status', 'active');
+
+    if (targetRows && targetRows.length > 0) {
+      lines.push('');
+      lines.push('---');
+      lines.push(
+        'ACTIVE RECOVERY TARGETS (goals set by the operator)',
+      );
+      lines.push(
+        'When discussing entities with active targets, reference the target and track progress.',
+      );
+      lines.push('');
+      for (const t of targetRows) {
+        const progress =
+          (t.baseline_gap as number) > 0 && t.current_gap != null
+            ? ((1 - (t.current_gap as number) / (t.baseline_gap as number)) * 100).toFixed(1)
+            : '0';
+        lines.push(
+          `- ${t.dimension_value} (${t.dimension_field}): target=${t.target_pct}% gap reduction, ` +
+            `baseline_gap=$${Math.round(t.baseline_gap as number)}, progress=${progress}%` +
+            (t.deadline ? `, deadline=${t.deadline}` : '') +
+            (t.title ? ` — "${t.title}"` : ''),
+        );
+      }
+      lines.push('---');
+    }
+  } catch {
+    // action_targets table may not exist yet
+  }
+
   return lines.join('\n');
 }
 

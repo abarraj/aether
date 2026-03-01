@@ -28,6 +28,20 @@ import { cn } from '@/lib/utils';
 
 type RangePreset = '7d' | '30d' | '90d';
 
+type ActionTarget = {
+  id: string;
+  dimension_field: string;
+  dimension_value: string;
+  target_pct: number;
+  baseline_gap: number;
+  current_gap: number | null;
+  current_pct_change: number | null;
+  status: string;
+  deadline: string | null;
+  title: string | null;
+  created_at: string;
+};
+
 function getInitialRange(): { period: Period; preset: RangePreset; range: DateRange } {
   const end = new Date();
   const start = subDays(end, 6);
@@ -57,6 +71,7 @@ export default function DashboardPage() {
     topLeakage: { dimension_value: string; gap_value: number }[];
   } | null>(null);
   const [hasUploads, setHasUploads] = useState<boolean | null>(null);
+  const [activeTargets, setActiveTargets] = useState<ActionTarget[]>([]);
 
   const effectiveOrgIds =
     activeOrgIds.length > 0 ? activeOrgIds : org ? [org.id] : [];
@@ -157,6 +172,17 @@ export default function DashboardPage() {
       })
       .catch(() => setLeakage(null));
   }, [org?.id]);
+
+  useEffect(() => {
+    fetch('/api/targets')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { targets?: ActionTarget[] } | null) => {
+        if (data?.targets) {
+          setActiveTargets(data.targets.filter((t) => t.status === 'active'));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!org) return;
@@ -448,6 +474,48 @@ export default function DashboardPage() {
               <ChevronRight className="h-3 w-3" />
             </div>
           </motion.div>
+
+          {activeTargets.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+              className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 px-5 py-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Active Targets
+                </div>
+                <span className="text-xs text-slate-600">
+                  {activeTargets.length} active
+                </span>
+              </div>
+              <div className="mt-3 space-y-2.5">
+                {activeTargets.slice(0, 3).map((target) => (
+                  <button
+                    key={target.id}
+                    type="button"
+                    onClick={() =>
+                      router.push(
+                        `/dashboard/performance?entity=${encodeURIComponent(target.dimension_value)}`,
+                      )
+                    }
+                    className="w-full flex items-center gap-3 rounded-xl bg-zinc-900/50 px-3 py-2.5 text-left hover:bg-zinc-800/50 transition-colors group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-slate-200 truncate">
+                        {target.dimension_value}
+                      </div>
+                      <div className="text-[11px] text-slate-500 truncate">
+                        {target.title}
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-slate-600 group-hover:text-emerald-400 transition-colors flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
 
           {/* Row 2: Hero revenue card */}
           <motion.div

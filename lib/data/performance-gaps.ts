@@ -286,4 +286,51 @@ export async function computePerformanceGaps(
       console.error('performance_gaps insert error:', error.message);
     }
   }
+
+  // Update active targets with latest gap data
+  try {
+    const { data: activeTargets } = await supabase
+      .from('action_targets')
+      .select('id, dimension_field, dimension_value, baseline_gap, target_pct')
+      .eq('org_id', orgId)
+      .eq('status', 'active');
+
+    if (activeTargets && activeTargets.length > 0) {
+      for (const target of activeTargets) {
+        const matchingGaps = upsertRows.filter(
+          (r) =>
+            r.dimension_field === target.dimension_field &&
+            r.dimension_value === target.dimension_value,
+        );
+        if (matchingGaps.length === 0) continue;
+
+        const sorted = matchingGaps.sort((a, b) =>
+          b.period_start.localeCompare(a.period_start),
+        );
+        const latestGap = sorted[0].gap_value;
+        const pctChange =
+          (target.baseline_gap as number) > 0
+            ? ((target.baseline_gap as number) - latestGap) /
+              (target.baseline_gap as number) *
+              100
+            : 0;
+
+        const isMet = pctChange >= (target.target_pct ?? 50);
+
+        await supabase
+          .from('action_targets')
+          .update({
+            current_gap: latestGap,
+            current_pct_change: Math.round(pctChange * 100) / 100,
+            last_checked_at: new Date().toISOString(),
+            status: isMet ? 'completed' : 'active',
+            completed_at: isMet ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', target.id);
+      }
+    }
+  } catch (err) {
+    console.error('Target update failed:', err);
+  }
 }

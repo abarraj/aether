@@ -13,7 +13,11 @@ export const SYSTEM_PROMPT_TEMPLATE =
   'Available pages: [View Performance](/dashboard/performance), [View Connected Data](/dashboard/data), [View Your Business](/dashboard/data-model), [View Alerts](/dashboard/alerts). ' +
   'Use these links naturally in your responses, for example: "Your Tuesday evening classes are underperforming. [View Performance](/dashboard/performance) to see the full breakdown." ' +
   "When you mention a specific entity (like an instructor, class, or time slot) that has a performance gap, link to it: [View Sarah Lee's Performance](/dashboard/performance?entity=Sarah%20Lee). " +
-  "Keep links contextual and helpful — don't add them to every sentence, just where they help the user take action.";
+  "Keep links contextual and helpful — don't add them to every sentence, just where they help the user take action. " +
+  'When the operator has set recovery targets for specific entities, reference those targets in your analysis. ' +
+  'Track whether the entity is on pace to meet the target. If the gap is shrinking, acknowledge progress. ' +
+  "If the gap is growing despite an active target, flag it as urgent. " +
+  'When recommending actions, you can suggest the user set a target: [Set Recovery Target](/dashboard/performance?entity=ENTITY_NAME).';
 
 export function buildSystemPrompt(options: {
   orgName: string;
