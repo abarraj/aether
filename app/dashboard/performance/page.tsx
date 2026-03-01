@@ -68,20 +68,38 @@ type MatrixData = {
   } | null;
 };
 
-function getGapCellClass(pct: number | null): string {
-  if (pct == null) return 'bg-zinc-900/30';
-  if (pct <= 0) return 'bg-emerald-500/80';
-  if (pct < 15) return 'bg-emerald-500/40';
-  if (pct < 30) return 'bg-amber-500/50';
-  if (pct < 50) return 'bg-orange-500/50';
-  return 'bg-rose-500/60';
+function gapColor(pct: number | null | undefined): string {
+  if (pct == null) return 'bg-zinc-800/40';
+  if (pct === 0) return 'bg-emerald-500/80';
+  if (pct <= 10) return 'bg-emerald-500/50';
+  if (pct <= 20) return 'bg-emerald-400/30';
+  if (pct <= 35) return 'bg-yellow-500/50';
+  if (pct <= 50) return 'bg-orange-500/50';
+  if (pct <= 70) return 'bg-rose-500/50';
+  return 'bg-rose-600/70';
 }
 
-function getGapBarColor(pct: number | null): string {
-  if (pct == null || pct <= 0) return '#10b981';
-  if (pct < 15) return '#10b981';
-  if (pct < 30) return '#f59e0b';
-  return '#f43f5e';
+function rankBadgeColor(avgGapPct: number | null): string {
+  if (avgGapPct == null) return 'bg-zinc-800 text-slate-400 border-zinc-700';
+  if (avgGapPct <= 15) return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+  if (avgGapPct <= 35) return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
+  if (avgGapPct <= 50) return 'bg-orange-500/10 text-orange-400 border-orange-500/20';
+  return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+}
+
+function barFillColor(avgGapPct: number | null): string {
+  if (avgGapPct == null) return 'bg-emerald-500';
+  if (avgGapPct <= 20) return 'bg-emerald-500';
+  if (avgGapPct <= 40) return 'bg-yellow-500';
+  return 'bg-rose-500';
+}
+
+function barColor(gapPct: number | null): string {
+  if (gapPct == null) return '#3f3f46';
+  if (gapPct <= 15) return '#10b981';
+  if (gapPct <= 35) return '#eab308';
+  if (gapPct <= 50) return '#f97316';
+  return '#ef4444';
 }
 
 function formatDimensionLabel(field: string): string {
@@ -370,6 +388,33 @@ function PerformancePageInner() {
           <p className="mb-4 text-xs font-medium uppercase tracking-wider text-slate-500">
             Performance heatmap — gap % by week
           </p>
+          <div className="mt-3 mb-4 flex items-center gap-4 text-[11px] text-slate-500">
+            <span className="text-slate-400 font-medium">Gap severity:</span>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-6 rounded bg-emerald-500/80" />
+              <span>0%</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-6 rounded bg-emerald-400/30" />
+              <span>10–20%</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-6 rounded bg-yellow-500/50" />
+              <span>20–35%</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-6 rounded bg-orange-500/50" />
+              <span>35–50%</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-6 rounded bg-rose-500/50" />
+              <span>50–70%</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-6 rounded bg-rose-600/70" />
+              <span>70%+</span>
+            </div>
+          </div>
           <div
             className="inline-grid gap-0.5"
             style={{
@@ -408,8 +453,8 @@ function PerformancePageInner() {
                     <div
                       key={week}
                       className={cn(
-                        'm-0.5 h-10 w-14 rounded-lg',
-                        getGapCellClass(pct),
+                        'h-10 w-14 rounded-lg transition-all hover:ring-1 hover:ring-white/20 cursor-pointer m-0.5',
+                        gapColor(pct),
                       )}
                       onMouseEnter={(e) => {
                         const pad = 12;
@@ -435,6 +480,12 @@ function PerformancePageInner() {
                         });
                       }}
                       onMouseLeave={() => setTooltip(null)}
+                      onClick={() => {
+                        const ent = entitiesForDimension.find(
+                          (e) => e.value === val && e.field === activeDimension,
+                        );
+                        if (ent) setSelectedEntity(ent);
+                      }}
                     />
                   );
                 })}
@@ -482,12 +533,6 @@ function PerformancePageInner() {
                     (entity.totalActual / entity.totalExpected) * 100,
                   )
                 : 0;
-            const rankClass =
-              idx === 0
-                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                : idx <= 2
-                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                  : 'bg-zinc-800 text-slate-400 border-zinc-700';
             return (
               <button
                 key={`${entity.field}::${entity.value}`}
@@ -498,7 +543,7 @@ function PerformancePageInner() {
                 <span
                   className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-xs font-bold',
-                    rankClass,
+                    rankBadgeColor(entity.avgGapPct),
                   )}
                 >
                   #{idx + 1}
@@ -507,9 +552,12 @@ function PerformancePageInner() {
                   <p className="truncate font-medium text-slate-100">
                     {entity.value}
                   </p>
-                  <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-rose-500/20">
+                  <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-zinc-800/50">
                     <div
-                      className="h-full rounded-full bg-emerald-500 transition-all"
+                      className={cn(
+                        'h-full rounded-full transition-all',
+                        barFillColor(entity.avgGapPct),
+                      )}
                       style={{ width: `${fillPct}%` }}
                     />
                   </div>
@@ -632,7 +680,7 @@ function PerformancePageInner() {
                           labelFormatter={(label) => `Week of ${label}`}
                         />
                         <Bar dataKey="gap" radius={[4, 4, 0, 0]}>
-                          {data!.weeks.map((_, i) => {
+                          {data!.weeks.map((w, i) => {
                             const pct =
                               selectedEntity.totalExpected > 0
                                 ? ((selectedEntity.trend[i] ?? 0) /
@@ -642,7 +690,7 @@ function PerformancePageInner() {
                             return (
                               <Cell
                                 key={i}
-                                fill={getGapBarColor(pct)}
+                                fill={barColor(pct)}
                               />
                             );
                           })}
