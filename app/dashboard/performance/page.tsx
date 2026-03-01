@@ -83,6 +83,12 @@ function getGapBarColor(pct: number | null): string {
   return '#f43f5e';
 }
 
+function formatDimensionLabel(field: string): string {
+  return field
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export default function PerformancePage() {
   const router = useRouter();
   const { org } = useUser();
@@ -323,7 +329,7 @@ export default function PerformancePage() {
                     : 'text-slate-400 hover:bg-zinc-900 hover:text-slate-200',
                 )}
               >
-                {d.field.replace(/_/g, ' ')}
+                {formatDimensionLabel(d.field)}
               </button>
             ))}
           </div>
@@ -527,7 +533,7 @@ export default function PerformancePage() {
                     {selectedEntity.value}
                   </h2>
                   <p className="text-xs text-slate-500">
-                    {selectedEntity.field.replace(/_/g, ' ')}
+                    {formatDimensionLabel(selectedEntity.field)}
                   </p>
                 </div>
                 <button
