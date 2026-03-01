@@ -13,7 +13,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { Sparkles, Info, ChevronRight, Target, Activity, Zap } from 'lucide-react';
+import { Sparkles, Info, ChevronRight, Target, Zap } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 
 import { useUser } from '@/hooks/use-user';
@@ -42,28 +42,6 @@ type ActionTarget = {
   title: string | null;
   created_at: string;
 };
-
-type FeedItem = {
-  type: 'audit' | 'alert' | 'target';
-  title: string;
-  subtitle: string | null;
-  severity: string | null;
-  timestamp: string;
-};
-
-function formatRelativeTime(timestamp: string): string {
-  const now = Date.now();
-  const then = new Date(timestamp).getTime();
-  const diff = now - then;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return format(new Date(timestamp), 'MMM d');
-}
 
 function RichSpotlight({
   text,
@@ -128,7 +106,6 @@ export default function DashboardPage() {
   const [targets, setTargets] = useState<ActionTarget[]>([]);
   const [spotlight, setSpotlight] = useState<string | null>(null);
   const [spotlightLoading, setSpotlightLoading] = useState(true);
-  const [activityFeed, setActivityFeed] = useState<FeedItem[]>([]);
   const [topLeakers, setTopLeakers] = useState<
     { value: string; gap: number; pct: number | null }[]
   >([]);
@@ -154,7 +131,7 @@ export default function DashboardPage() {
           : 'Working late';
   const greetingSuffix = hour >= 21 || hour < 5 ? '?' : ',';
 
-  const handlePresetChange = (nextPreset: RangePreset) => {
+  const handlePresetChange = useCallback((nextPreset: RangePreset) => {
     const end = new Date();
     let days = 7;
     if (nextPreset === '30d') days = 30;
@@ -167,11 +144,20 @@ export default function DashboardPage() {
       start: format(start, 'yyyy-MM-dd'),
       end: format(end, 'yyyy-MM-dd'),
     });
-  };
+  }, []);
 
   const hasSeries = (kpis?.series?.length ?? 0) > 0;
-  const hasDataButNotInRange = !hasSeries && hasUploads === true;
   const isActuallyEmpty = !isLoading && !hasSeries && hasUploads === false;
+
+  // Auto-widen time range if current range has no data
+  useEffect(() => {
+    if (isLoading || !hasUploads) return;
+    if (!hasSeries && preset === '7d') {
+      handlePresetChange('30d');
+    } else if (!hasSeries && preset === '30d') {
+      handlePresetChange('90d');
+    }
+  }, [isLoading, hasSeries, hasUploads, preset, handlePresetChange]);
 
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -264,15 +250,6 @@ export default function DashboardPage() {
       .catch(() => {});
   }, [org?.id]);
 
-  // Activity feed
-  useEffect(() => {
-    if (!org) return;
-    fetch('/api/activity')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setActivityFeed(data?.items ?? []))
-      .catch(() => {});
-  }, [org?.id]);
-
   // Top leakers (from existing leakage data)
   useEffect(() => {
     if (leakage?.topLeakage && leakage.topLeakage.length > 0) {
@@ -349,7 +326,6 @@ export default function DashboardPage() {
     return `Tracking ${kpis.series.length} days of operational data.`;
   }, [kpis]);
 
-  const alertCount = activityFeed.filter((f) => f.type === 'alert').length;
   const targetCount = targets.length;
   const insightParts: string[] = [];
   if (insight) insightParts.push(insight);
@@ -357,8 +333,6 @@ export default function DashboardPage() {
     insightParts.push(
       `${targetCount} active target${targetCount > 1 ? 's' : ''}.`,
     );
-  if (alertCount > 0)
-    insightParts.push(`${alertCount} alert${alertCount > 1 ? 's' : ''} need you.`);
   const fullInsight = insightParts.join(' ');
 
   const laborChange = kpis?.changes.laborCostPct ?? null;
@@ -396,36 +370,39 @@ export default function DashboardPage() {
             {greeting}
             {greetingSuffix} {greetingName}
           </h1>
-          {hasDataButNotInRange ? (
-            <p className="mt-1.5 text-sm text-slate-500">
-              Your data is connected. Choose a wider range above.
-            </p>
-          ) : (
-            fullInsight && (
-              <p className="mt-1.5 text-sm text-slate-500">{fullInsight}</p>
-            )
+          {fullInsight && (
+            <p className="mt-1.5 text-sm text-slate-500">{fullInsight}</p>
           )}
         </div>
 
         <div className="flex items-center gap-3">
           <div className="inline-flex rounded-2xl border border-zinc-800 bg-zinc-950/80 p-1 text-xs text-slate-300">
-            {(['7d', '30d', '90d'] as RangePreset[]).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => handlePresetChange(option)}
-                className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
-                  preset === option
-                    ? 'bg-zinc-800 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-300',
-                )}
-              >
-                {option === '7d' && 'This week'}
-                {option === '30d' && 'This month'}
-                {option === '90d' && 'This quarter'}
-              </button>
-            ))}
+            {(['7d', '30d', '90d'] as RangePreset[]).map((option) => {
+              const isDisabled =
+                !hasSeries &&
+                ((preset === '30d' && option === '7d') ||
+                  (preset === '90d' && (option === '7d' || option === '30d')));
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => handlePresetChange(option)}
+                  className={cn(
+                    'rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+                    preset === option
+                      ? 'bg-zinc-800 text-white shadow-sm'
+                      : isDisabled
+                        ? 'cursor-not-allowed text-slate-700'
+                        : 'text-slate-500 hover:text-slate-300',
+                  )}
+                >
+                  {option === '7d' && 'This week'}
+                  {option === '30d' && 'This month'}
+                  {option === '90d' && 'This quarter'}
+                </button>
+              );
+            })}
           </div>
           <button
             type="button"
@@ -502,41 +479,6 @@ export default function DashboardPage() {
               Connect Your Data
             </button>
             <p className="mt-3 text-xs text-slate-500">Takes about 2 minutes</p>
-          </div>
-        </motion.div>
-      ) : hasDataButNotInRange ? (
-        <motion.div
-          className="mt-6 flex justify-center"
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div className="flex max-w-md flex-col items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 px-10 py-12 text-center shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
-              <Sparkles className="h-6 w-6 text-emerald-400" />
-            </div>
-            <h2 className="text-lg font-semibold tracking-tight">
-              No data in this time range
-            </h2>
-            <p className="mt-2 text-sm text-slate-400">
-              Your data is connected, but there are no records in the selected period. Try a wider view.
-            </p>
-            <div className="mt-6 flex gap-3">
-              <button
-                type="button"
-                className="rounded-2xl bg-emerald-500 px-5 py-2.5 text-sm font-medium text-slate-950 hover:bg-emerald-600 transition"
-                onClick={() => handlePresetChange('30d')}
-              >
-                This month
-              </button>
-              <button
-                type="button"
-                className="rounded-2xl border border-zinc-700 px-5 py-2.5 text-sm font-medium text-slate-300 hover:bg-zinc-900 transition"
-                onClick={() => handlePresetChange('90d')}
-              >
-                This quarter
-              </button>
-            </div>
           </div>
         </motion.div>
       ) : (
@@ -1064,60 +1006,6 @@ export default function DashboardPage() {
               </ResponsiveContainer>
             </div>
           </motion.div>
-
-          {/* Activity Feed */}
-          {!isActuallyEmpty && activityFeed.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                duration: 0.5,
-                delay: 0.3,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-              className="rounded-2xl border border-zinc-800/60 bg-zinc-950/80 p-5"
-            >
-              <div className="mb-4 flex items-center gap-2">
-                <Activity className="h-4 w-4 text-slate-500" />
-                <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Recent Activity
-                </span>
-              </div>
-              <div className="space-y-0">
-                {activityFeed.slice(0, 8).map((item, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 border-b border-zinc-800/40 py-2.5 last:border-0"
-                  >
-                    <div
-                      className={cn(
-                        'mt-1 h-2 w-2 flex-shrink-0 rounded-full',
-                        item.type === 'alert'
-                          ? item.severity === 'critical'
-                            ? 'bg-rose-500'
-                            : item.severity === 'warning'
-                              ? 'bg-amber-500'
-                              : 'bg-blue-500'
-                          : item.type === 'target'
-                            ? item.severity === 'success'
-                              ? 'bg-emerald-500'
-                              : 'bg-emerald-400'
-                            : 'bg-zinc-600',
-                      )}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-slate-300">
-                        {item.title}
-                      </p>
-                    </div>
-                    <span className="flex-shrink-0 whitespace-nowrap text-[11px] text-slate-600">
-                      {formatRelativeTime(item.timestamp)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
         </>
       )}
     </div>
