@@ -3,11 +3,20 @@ import { NextResponse } from 'next/server';
 import { getOrgContext } from '@/lib/auth/org-context';
 import { claude } from '@/lib/ai/claude';
 import { buildDataContext } from '@/lib/ai/data-context';
+import { assertAiCreditsAvailable } from '@/lib/billing/queries';
+
+const MODEL_ID = 'claude-sonnet-4-20250514';
 
 export async function GET() {
   try {
     const ctx = await getOrgContext();
     if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    // ── Check AI credit limit ────────────────────────────────────
+    const hasCredits = await assertAiCreditsAvailable(ctx.orgId);
+    if (!hasCredits) {
+      return NextResponse.json({ text: null, limitReached: true });
+    }
 
     const { data: org } = await ctx.supabase
       .from('organizations')
@@ -22,7 +31,7 @@ export async function GET() {
     }
 
     const completion = await claude().messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: MODEL_ID,
       max_tokens: 200,
       system:
         `You are the AI COO for ${org?.name ?? 'this business'}, a ${org?.industry ?? 'business'}. ` +
@@ -46,6 +55,24 @@ export async function GET() {
       .map((part) => ('text' in part ? part.text : ''))
       .join('')
       .trim();
+
+    // ── Log AI usage event (1 credit) ────────────────────────────
+    try {
+      const tokensIn = completion.usage?.input_tokens ?? 0;
+      const tokensOut = completion.usage?.output_tokens ?? 0;
+
+      await ctx.supabase.from('ai_usage_events').insert({
+        org_id: ctx.orgId,
+        user_id: ctx.userId,
+        route: 'spotlight',
+        model: MODEL_ID,
+        tokens_in: tokensIn,
+        tokens_out: tokensOut,
+        success: true,
+      });
+    } catch {
+      // Non-blocking: metering failure should never kill spotlight
+    }
 
     return NextResponse.json({ text });
   } catch (err) {

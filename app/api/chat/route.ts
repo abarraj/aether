@@ -13,12 +13,22 @@ import { getOrgContext } from '@/lib/auth/org-context';
 import { buildDataContext } from '@/lib/ai/data-context';
 import { buildSystemPrompt } from '@/lib/ai/prompts';
 import { logAuditEvent } from '@/lib/audit';
+import { assertAiCreditsAvailable } from '@/lib/billing/queries';
 
 export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
     if (!ctx) {
       return new NextResponse('Unauthorized', { status: 401 });
+    }
+
+    // ── Check AI credit limit ────────────────────────────────────────
+    const hasCredits = await assertAiCreditsAvailable(ctx.orgId);
+    if (!hasCredits) {
+      return NextResponse.json(
+        { error: 'AI credit limit reached for your current plan.', upgrade: true },
+        { status: 402 },
+      );
     }
 
     const { data: profile } = await ctx.supabase
@@ -149,11 +159,28 @@ export async function POST(request: Request) {
     // Capture conversationId in a local const for the onFinish closure.
     const convId = conversationId;
 
+    const MODEL_ID = 'claude-sonnet-4-5-20250929';
+
     const result = streamText({
-      model: anthropic('claude-sonnet-4-5-20250929'),
+      model: anthropic(MODEL_ID),
       system,
       messages,
-      async onFinish({ text }) {
+      async onFinish({ text, usage: tokenUsage }) {
+        // ── Log AI usage event (1 credit) ──────────────────────────
+        try {
+          await ctx.supabase.from('ai_usage_events').insert({
+            org_id: ctx.orgId,
+            user_id: ctx.userId,
+            route: 'chat',
+            model: MODEL_ID,
+            tokens_in: tokenUsage?.promptTokens ?? 0,
+            tokens_out: tokenUsage?.completionTokens ?? 0,
+            success: true,
+          });
+        } catch {
+          // Non-blocking: metering failure should never kill the chat
+        }
+
         // Persist the assistant's full response
         if (convId && text) {
           try {
