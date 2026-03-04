@@ -101,19 +101,61 @@ function getMessageText(message: {
   return '';
 }
 
-// ── Suggested Prompts (static fallback — dynamic added in Commit 4) ─
+// ── Dynamic Suggested Prompts ────────────────────────────────────────
 
-const STATIC_PROMPTS = [
-  'Where am I losing the most money and what should I do about it?',
-  'Which staff member needs the most attention right now?',
+/** Contextual data used to build dynamic prompts. */
+interface PromptContext {
+  alertCount: number;
+  unmetTargetCount: number;
+  hasPerformanceGaps: boolean;
+}
+
+const GENERAL_PROMPTS = [
   'Give me 3 things I should change this week to make more money.',
   'Compare my best and worst performers — what can I learn?',
   'Are there any patterns in my revenue that I should worry about?',
-  'What would happen if I cut my lowest-performing class?',
 ];
 
 const NO_DATA_PROMPT =
   'Connect your data first, then I can analyze your entire business. Head to Connected Data to get started.';
+
+function buildDynamicPrompts(ctx: PromptContext): string[] {
+  const prompts: string[] = [];
+
+  // Priority prompts based on actual data state
+  if (ctx.alertCount > 0) {
+    prompts.push(
+      ctx.alertCount === 1
+        ? 'I have an active alert — what should I do about it?'
+        : `I have ${ctx.alertCount} active alerts — which ones need immediate attention?`,
+    );
+  }
+
+  if (ctx.unmetTargetCount > 0) {
+    prompts.push(
+      ctx.unmetTargetCount === 1
+        ? 'One of my metric targets is not being met — what should I change?'
+        : `${ctx.unmetTargetCount} of my metric targets are not being met — what should I prioritize?`,
+    );
+  }
+
+  if (ctx.hasPerformanceGaps) {
+    prompts.push('Where am I losing the most revenue this week and how do I fix it?');
+  }
+
+  // Fill remaining slots with general prompts (max 6 total)
+  for (const gp of GENERAL_PROMPTS) {
+    if (prompts.length >= 6) break;
+    prompts.push(gp);
+  }
+
+  // Always include at least one people-oriented prompt if we have room
+  if (prompts.length < 6) {
+    prompts.push('Which staff member needs the most attention right now?');
+  }
+
+  return prompts;
+}
 
 // ── Main Component ──────────────────────────────────────────────────
 
@@ -135,25 +177,74 @@ function AIAssistantPageInner() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [restoringConversation, setRestoringConversation] = useState(false);
 
-  // Check if uploads exist
+  // ── Dynamic prompt context ────────────────────────────────────────
+  const [promptCtx, setPromptCtx] = useState<PromptContext>({
+    alertCount: 0,
+    unmetTargetCount: 0,
+    hasPerformanceGaps: false,
+  });
+
+  // Check if uploads exist + fetch prompt context data
   useEffect(() => {
     if (!org) return;
     const check = async () => {
       const { createClient } = await import('@/lib/supabase/client');
       const supabase = createClient();
-      const { count } = await supabase
-        .from('uploads')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', org.id)
-        .eq('status', 'ready');
-      setUploadsExist((count ?? 0) > 0);
+
+      // Parallel lightweight queries
+      const [uploadsRes, alertsRes] = await Promise.all([
+        supabase
+          .from('uploads')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', org.id)
+          .eq('status', 'ready'),
+        supabase
+          .from('alerts')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', org.id)
+          .eq('is_dismissed', false)
+          .eq('is_read', false),
+      ]);
+
+      // These tables may not exist yet — wrap in try/catch
+      let unmetCount = 0;
+      let gapCount = 0;
+      try {
+        const targetsRes = await supabase
+          .from('targets')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', org.id)
+          .eq('status', 'active')
+          .eq('current_met', false);
+        unmetCount = targetsRes.count ?? 0;
+      } catch {
+        // targets table may not exist yet
+      }
+      try {
+        const gapsRes = await supabase
+          .from('performance_gaps')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', org.id);
+        gapCount = gapsRes.count ?? 0;
+      } catch {
+        // performance_gaps table may not exist yet
+      }
+
+      setUploadsExist((uploadsRes.count ?? 0) > 0);
+      setPromptCtx({
+        alertCount: alertsRes.count ?? 0,
+        unmetTargetCount: unmetCount,
+        hasPerformanceGaps: gapCount > 0,
+      });
     };
     check();
   }, [org]);
 
   const hasData = uploadsExist || (metrics?.series?.length ?? 0) > 0;
 
-  const suggestedPrompts = hasData ? STATIC_PROMPTS : [NO_DATA_PROMPT];
+  const suggestedPrompts = hasData
+    ? buildDynamicPrompts(promptCtx)
+    : [NO_DATA_PROMPT];
 
   // ── useChat with conversation support ─────────────────────────────
   const {
