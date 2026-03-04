@@ -103,7 +103,7 @@ export default function SignupPage() {
         // Audit logging failure should not block signup.
       }
 
-      toast.success(‘Account created. Let’s set up your workspace.’);
+      toast.success("Account created. Let’s set up your workspace.");
       router.push(safeNext ?? (hasOrg ? ‘/dashboard’ : ‘/onboarding’));
     } catch {
       toast.error('Something went wrong creating your account.');
