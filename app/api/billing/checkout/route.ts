@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getStripe } from '@/lib/stripe';
-import { createClient } from '@/lib/supabase/server';
+import { getOrgContext } from '@/lib/auth/org-context';
 
 const PRICE_MAP: Record<string, string | undefined> = {
   starter: process.env.STRIPE_STARTER_PRICE_ID,
@@ -10,19 +10,10 @@ const PRICE_MAP: Record<string, string | undefined> = {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const ctx = await getOrgContext();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle();
-    if (!profile?.org_id)
-      return NextResponse.json({ error: 'No org' }, { status: 400 });
+    const { data: { user } } = await ctx.supabase.auth.getUser();
 
     const body = (await request.json()) as { plan?: string };
     const plan = body.plan as string;
@@ -41,11 +32,11 @@ export async function POST(request: NextRequest) {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${baseUrl}/dashboard/settings/billing?success=true`,
       cancel_url: `${baseUrl}/dashboard/settings/billing?canceled=true`,
-      client_reference_id: profile.org_id,
-      customer_email: user.email ?? undefined,
+      client_reference_id: ctx.orgId,
+      customer_email: user?.email ?? undefined,
       metadata: {
-        org_id: profile.org_id,
-        user_id: user.id,
+        org_id: ctx.orgId,
+        user_id: ctx.userId,
         plan,
       },
     });

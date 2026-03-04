@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
-
-type ProfileOrg = { org_id: string | null };
+import { getOrgContext } from '@/lib/auth/org-context';
 
 type AuditRow = {
   action: string;
@@ -29,40 +27,28 @@ type TargetRow = {
 
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-    if (!profile?.org_id) return NextResponse.json({ error: 'No org' }, { status: 400 });
-
-    const orgId = profile.org_id;
+    const ctx = await getOrgContext();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const [auditsRes, alertsRes, targetsRes] = await Promise.all([
-      supabase
+      ctx.supabase
         .from('audit_log')
         .select('action, description, target_type, created_at, actor_email')
-        .eq('org_id', orgId)
+        .eq('org_id', ctx.orgId)
         .order('created_at', { ascending: false })
         .limit(10)
         .returns<AuditRow[]>(),
-      supabase
+      ctx.supabase
         .from('alerts')
         .select('type, title, severity, created_at')
-        .eq('org_id', orgId)
+        .eq('org_id', ctx.orgId)
         .order('created_at', { ascending: false })
         .limit(10)
         .returns<AlertRow[]>(),
-      supabase
+      ctx.supabase
         .from('action_targets')
         .select('dimension_value, status, title, created_at, completed_at')
-        .eq('org_id', orgId)
+        .eq('org_id', ctx.orgId)
         .order('created_at', { ascending: false })
         .limit(10)
         .returns<TargetRow[]>(),

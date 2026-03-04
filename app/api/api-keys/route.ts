@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
+import { getOrgContext } from '@/lib/auth/org-context';
 import { generateApiKey } from '@/lib/api-keys';
 import { logAuditEvent } from '@/lib/audit';
 
@@ -21,32 +21,17 @@ type ApiKeyRow = {
 };
 
 export async function GET() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, org_id, email')
-    .eq('id', user.id)
-    .maybeSingle<{ id: string; org_id: string | null; email: string | null }>();
-
-  if (!profile?.org_id) {
-    return NextResponse.json({ error: 'User has no organization' }, { status: 400 });
-  }
-
-  const { data } = await supabase
+  const { data } = await ctx.supabase
     .from('api_keys')
     .select(
       'id, org_id, name, key_prefix, permissions, created_at, last_used_at, expires_at, is_active',
     )
-    .eq('org_id', profile.org_id)
+    .eq('org_id', ctx.orgId)
     .order('created_at', { ascending: false })
     .returns<ApiKeyRow[]>();
 
@@ -60,26 +45,18 @@ type CreateBody = {
 };
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const body = (await request.json()) as CreateBody;
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, org_id, email')
-    .eq('id', user.id)
-    .maybeSingle<{ id: string; org_id: string | null; email: string | null }>();
+  const body = (await request.json()) as CreateBody;
 
-  if (!profile?.org_id) {
-    return NextResponse.json({ error: 'User has no organization' }, { status: 400 });
-  }
+  const { data: profile } = await ctx.supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', ctx.userId)
+    .maybeSingle<{ email: string | null }>();
 
   const name = body.name?.trim();
   if (!name) {
@@ -120,11 +97,11 @@ export async function POST(request: NextRequest) {
 
   const { fullKey, prefix, hash } = generateApiKey();
 
-  const { data, error } = await supabase
+  const { data, error } = await ctx.supabase
     .from('api_keys')
     .insert({
-      org_id: profile.org_id,
-      created_by: profile.id,
+      org_id: ctx.orgId,
+      created_by: ctx.userId,
       name,
       key_prefix: prefix,
       key_hash: hash,
@@ -146,9 +123,9 @@ export async function POST(request: NextRequest) {
   const ipAddress = ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
 
   await logAuditEvent({
-    orgId: profile.org_id,
-    actorId: profile.id,
-    actorEmail: profile.email ?? user.email ?? null,
+    orgId: ctx.orgId,
+    actorId: ctx.userId,
+    actorEmail: profile?.email ?? null,
     action: 'api_key.create',
     targetType: 'api_key',
     targetId: data.id,
@@ -165,4 +142,3 @@ export async function POST(request: NextRequest) {
     apiKey: data,
   });
 }
-

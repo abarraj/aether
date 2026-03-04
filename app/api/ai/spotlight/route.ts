@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
+import { getOrgContext } from '@/lib/auth/org-context';
 import { claude } from '@/lib/ai/claude';
 import { buildDataContext } from '@/lib/ai/data-context';
-
-type ProfileOrg = { org_id: string | null };
 
 // Simple in-memory cache
 const cache = new Map<string, { text: string; timestamp: number }>();
@@ -12,32 +10,22 @@ const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-    if (!profile?.org_id) return NextResponse.json({ error: 'No org' }, { status: 400 });
-
-    const orgId = profile.org_id;
+    const ctx = await getOrgContext();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     // Check cache
-    const cached = cache.get(orgId);
+    const cached = cache.get(ctx.orgId);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       return NextResponse.json({ text: cached.text });
     }
 
-    const { data: org } = await supabase
+    const { data: org } = await ctx.supabase
       .from('organizations')
       .select('name, industry')
-      .eq('id', orgId)
+      .eq('id', ctx.orgId)
       .maybeSingle();
 
-    const dataContext = await buildDataContext(orgId);
+    const dataContext = await buildDataContext(ctx.orgId);
 
     if (!dataContext || dataContext.length < 100) {
       return NextResponse.json({ text: null });
@@ -69,7 +57,7 @@ export async function GET() {
       .join('')
       .trim();
 
-    cache.set(orgId, { text, timestamp: Date.now() });
+    cache.set(ctx.orgId, { text, timestamp: Date.now() });
 
     return NextResponse.json({ text });
   } catch (err) {

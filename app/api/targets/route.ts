@@ -1,28 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
-
-type ProfileOrg = { org_id: string | null };
+import { getOrgContext } from '@/lib/auth/org-context';
 
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const ctx = await getOrgContext();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-    if (!profile?.org_id) return NextResponse.json({ error: 'No org' }, { status: 400 });
-
-    const { data: targets } = await supabase
+    const { data: targets } = await ctx.supabase
       .from('action_targets')
       .select('*')
-      .eq('org_id', profile.org_id)
+      .eq('org_id', ctx.orgId)
       .order('created_at', { ascending: false });
 
     return NextResponse.json({ targets: targets ?? [] });
@@ -33,18 +21,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-    if (!profile?.org_id) return NextResponse.json({ error: 'No org' }, { status: 400 });
+    const ctx = await getOrgContext();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = (await request.json()) as Record<string, unknown>;
     const {
@@ -66,11 +44,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: target, error } = await supabase
+    const { data: target, error } = await ctx.supabase
       .from('action_targets')
       .insert({
-        org_id: profile.org_id,
-        created_by: user.id,
+        org_id: ctx.orgId,
+        created_by: ctx.userId,
         dimension_field: String(dimension_field),
         dimension_value: String(dimension_value),
         target_type: target_type ?? 'reduce_gap',

@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Buffer } from 'node:buffer';
 
-import { createClient } from '@/lib/supabase/server';
+import { getOrgContext } from '@/lib/auth/org-context';
 import { parseCsv } from '@/lib/csv-parser';
 import { canAddDataSource } from '@/lib/billing/queries';
 import { logAuditEvent } from '@/lib/audit';
@@ -19,13 +19,20 @@ import {
 } from '@/lib/data/date-mapping';
 import { normalizeColumnMapping } from '@/lib/data/normalize-column-mapping';
 
-type ProfileOrg = {
-  org_id: string | null;
-};
-
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
+    const ctx = await getOrgContext();
+    if (!ctx) {
+      return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+    }
+
+    const { data: profile } = await ctx.supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', ctx.userId)
+      .maybeSingle<{ email: string | null }>();
+
+    const userEmail = profile?.email ?? null;
 
     const formData = await request.formData();
     const file = formData.get('file');
@@ -68,27 +75,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File size exceeds 50MB limit.' }, { status: 400 });
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-
-    if (profileError || !profile?.org_id) {
-      return NextResponse.json({ error: 'User is not associated with an organization.' }, { status: 400 });
-    }
-
-    const orgId = profile.org_id;
-
-    const allowed = await canAddDataSource(orgId);
+    const allowed = await canAddDataSource(ctx.orgId);
     if (!allowed) {
       return NextResponse.json(
         {
@@ -103,9 +90,9 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
 
     const sanitizedName = file.name.replace(/\s+/g, '-');
-    const objectPath = `${orgId}/${Date.now()}-${sanitizedName}`;
+    const objectPath = `${ctx.orgId}/${Date.now()}-${sanitizedName}`;
 
-    const { error: storageError } = await supabase.storage
+    const { error: storageError } = await ctx.supabase.storage
       .from('uploads')
       .upload(objectPath, buffer, {
         contentType: file.type || 'text/plain',
@@ -116,11 +103,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to store file.' }, { status: 500 });
     }
 
-    const { data: uploadRecord, error: uploadError } = await supabase
+    const { data: uploadRecord, error: uploadError } = await ctx.supabase
       .from('uploads')
       .insert({
-        org_id: orgId,
-        uploaded_by: user.id,
+        org_id: ctx.orgId,
+        uploaded_by: ctx.userId,
         file_name: file.name,
         file_path: objectPath,
         file_size: file.size,
@@ -156,7 +143,7 @@ export async function POST(request: NextRequest) {
           getMappedValue(rowAsRecord, dateHeader) ?? findFallbackDateValue(rowAsRecord);
         const normalized = normalizeDate(rawDate);
         return {
-          org_id: orgId,
+          org_id: ctx.orgId,
           upload_id: uploadRecord.id,
           data_type: dataType,
           data: row,
@@ -171,10 +158,10 @@ export async function POST(request: NextRequest) {
         nullDates,
       });
 
-      const { error: rowsError } = await supabase.from('data_rows').insert(rowsToInsert);
+      const { error: rowsError } = await ctx.supabase.from('data_rows').insert(rowsToInsert);
 
       if (rowsError) {
-        await supabase
+        await ctx.supabase
           .from('uploads')
           .update({ status: 'error', error_message: 'Failed to create data rows.' })
           .eq('id', uploadRecord.id);
@@ -183,7 +170,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await ctx.supabase
       .from('uploads')
       .update({
         status: 'processing',
@@ -196,7 +183,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 1: Process KPI snapshots
-    await processUploadData(orgId, uploadRecord.id);
+    await processUploadData(ctx.orgId, uploadRecord.id);
 
     // Step 2: Build ontology FIRST (gap engine needs entity_types)
     const detectionRaw = formData.get('detection');
@@ -212,10 +199,10 @@ export async function POST(request: NextRequest) {
           (detection.confidence ?? 0) > 0.3 &&
           (detection.entityTypes?.length ?? 0) > 0
         ) {
-          const { data: dataRows } = await supabase
+          const { data: dataRows } = await ctx.supabase
             .from('data_rows')
             .select('data')
-            .eq('org_id', orgId)
+            .eq('org_id', ctx.orgId)
             .eq('upload_id', uploadRecord.id)
             .limit(300)
             .returns<{ data: Record<string, unknown> }[]>();
@@ -229,7 +216,7 @@ export async function POST(request: NextRequest) {
 
           if (allRows.length > 0) {
             const counts = await buildOntologyFromDetection(
-              orgId,
+              ctx.orgId,
               uploadRecord.id,
               detection,
               allRows,
@@ -243,9 +230,9 @@ export async function POST(request: NextRequest) {
               : null;
 
             await logAuditEvent({
-              orgId,
-              actorId: user.id,
-              actorEmail: user.email ?? null,
+              orgId: ctx.orgId,
+              actorId: ctx.userId,
+              actorEmail: userEmail,
               action: 'ontology.auto_detected',
               targetType: 'upload',
               targetId: uploadRecord.id,
@@ -269,13 +256,13 @@ export async function POST(request: NextRequest) {
 
     // Step 3: Compute performance gaps AFTER ontology exists
     try {
-      await computePerformanceGaps(orgId, uploadRecord.id);
+      await computePerformanceGaps(ctx.orgId, uploadRecord.id);
     } catch (gapErr) {
       console.error('Performance gap computation failed:', gapErr);
     }
 
     // Step 4: Mark as ready
-    await supabase
+    await ctx.supabase
       .from('uploads')
       .update({ status: 'ready' })
       .eq('id', uploadRecord.id);
@@ -287,18 +274,18 @@ export async function POST(request: NextRequest) {
     // Handle manual ontology mapping if provided
     let ontologyResult: { entitiesCreated: number; relationshipsCreated: number } | undefined;
     if (ontology && rowCount > 0) {
-      const result = await extractEntities(orgId, uploadRecord.id, ontology);
+      const result = await extractEntities(ctx.orgId, uploadRecord.id, ontology);
       ontologyResult = result;
     }
 
     await logAuditEvent({
-      orgId: orgId,
-      actorId: user.id,
-      actorEmail: user.email ?? null,
+      orgId: ctx.orgId,
+      actorId: ctx.userId,
+      actorEmail: userEmail,
       action: 'data.upload',
       targetType: 'upload',
       targetId: uploadRecord.id,
-      description: `${user.email ?? 'User'} uploaded ${file.name}`,
+      description: `${userEmail ?? 'User'} uploaded ${file.name}`,
       metadata: {
         data_type: dataType,
         row_count: rowCount,
@@ -315,4 +302,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unexpected error during upload.' }, { status: 500 });
   }
 }
-

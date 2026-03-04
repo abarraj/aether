@@ -3,11 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { startOfISOWeek } from 'date-fns';
 
-import { createClient } from '@/lib/supabase/server';
-
-type ProfileOrg = {
-  org_id: string | null;
-};
+import { getOrgContext } from '@/lib/auth/org-context';
 
 type GapRow = {
   dimension_field: string;
@@ -20,30 +16,10 @@ type GapRow = {
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const ctx = await getOrgContext();
+    if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
     }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-
-    if (profileError || !profile?.org_id) {
-      return NextResponse.json(
-        { error: 'User is not associated with an organization.' },
-        { status: 400 },
-      );
-    }
-
-    const orgId = profile.org_id;
 
     const { searchParams } = new URL(request.url);
     const weekStartParam = searchParams.get('weekStart');
@@ -52,10 +28,10 @@ export async function GET(request: NextRequest) {
     if (weekStartParam) {
       weekStart = weekStartParam;
     } else {
-      const { data: latestWeek } = await supabase
+      const { data: latestWeek } = await ctx.supabase
         .from('performance_gaps')
         .select('period_start')
-        .eq('org_id', orgId)
+        .eq('org_id', ctx.orgId)
         .eq('period', 'weekly')
         .order('period_start', { ascending: false })
         .limit(1)
@@ -66,10 +42,10 @@ export async function GET(request: NextRequest) {
         startOfISOWeek(new Date()).toISOString().slice(0, 10);
     }
 
-    const { data: rows, error: rowsError } = await supabase
+    const { data: rows, error: rowsError } = await ctx.supabase
       .from('performance_gaps')
       .select('dimension_field, dimension_value, gap_value, gap_pct, actual_value, expected_value')
-      .eq('org_id', orgId)
+      .eq('org_id', ctx.orgId)
       .eq('period', 'weekly')
       .eq('period_start', weekStart)
       .order('gap_value', { ascending: false })

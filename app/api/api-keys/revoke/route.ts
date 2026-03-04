@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
+import { getOrgContext } from '@/lib/auth/org-context';
 import { logAuditEvent } from '@/lib/audit';
 
 type RevokeBody = {
@@ -10,36 +10,28 @@ type RevokeBody = {
 };
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const body = (await request.json()) as RevokeBody;
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, org_id, email')
-    .eq('id', user.id)
-    .maybeSingle<{ id: string; org_id: string | null; email: string | null }>();
+  const body = (await request.json()) as RevokeBody;
 
-  if (!profile?.org_id) {
-    return NextResponse.json({ error: 'User has no organization' }, { status: 400 });
-  }
+  const { data: profile } = await ctx.supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', ctx.userId)
+    .maybeSingle<{ email: string | null }>();
 
   if (!body.id) {
     return NextResponse.json({ error: 'Key id is required' }, { status: 400 });
   }
 
-  const { data: key } = await supabase
+  const { data: key } = await ctx.supabase
     .from('api_keys')
     .select('id, org_id, name, is_active')
     .eq('id', body.id)
-    .eq('org_id', profile.org_id)
+    .eq('org_id', ctx.orgId)
     .maybeSingle<{ id: string; org_id: string; name: string; is_active: boolean }>();
 
   if (!key) {
@@ -50,11 +42,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   }
 
-  const { error } = await supabase
+  const { error } = await ctx.supabase
     .from('api_keys')
     .update({ is_active: false })
     .eq('id', key.id)
-    .eq('org_id', profile.org_id);
+    .eq('org_id', ctx.orgId);
 
   if (error) {
     return NextResponse.json({ error: 'Failed to revoke key' }, { status: 500 });
@@ -65,9 +57,9 @@ export async function POST(request: NextRequest) {
   const ipAddress = ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
 
   await logAuditEvent({
-    orgId: profile.org_id,
-    actorId: profile.id,
-    actorEmail: profile.email ?? user.email ?? null,
+    orgId: ctx.orgId,
+    actorId: ctx.userId,
+    actorEmail: profile?.email ?? null,
     action: 'api_key.revoke',
     targetType: 'api_key',
     targetId: key.id,
@@ -78,4 +70,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ success: true });
 }
-

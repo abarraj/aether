@@ -4,44 +4,36 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { streamText } from 'ai';
 import { NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
+import { getOrgContext } from '@/lib/auth/org-context';
 import { buildDataContext } from '@/lib/ai/data-context';
 import { buildSystemPrompt } from '@/lib/ai/prompts';
 import { logAuditEvent } from '@/lib/audit';
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const body = await request.json();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const ctx = await getOrgContext();
+    if (!ctx) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    const { data: profile } = await supabase
+    const { data: profile } = await ctx.supabase
       .from('profiles')
-      .select('org_id, full_name')
-      .eq('id', user.id)
-      .maybeSingle<{ org_id: string | null; full_name: string | null }>();
+      .select('full_name, email')
+      .eq('id', ctx.userId)
+      .maybeSingle<{ full_name: string | null; email: string | null }>();
 
-    if (!profile?.org_id) {
-      return new NextResponse('User has no organization.', { status: 400 });
-    }
+    const body = await request.json();
 
-    const { data: org } = await supabase
+    const { data: org } = await ctx.supabase
       .from('organizations')
       .select('id, name, industry')
-      .eq('id', profile.org_id)
+      .eq('id', ctx.orgId)
       .maybeSingle<{ id: string; name: string; industry: string | null }>();
 
     const orgName = org?.name ?? 'your organization';
     const industry = org?.industry ?? null;
 
-    const dataContext = await buildDataContext(profile.org_id);
+    const dataContext = await buildDataContext(ctx.orgId);
     const system = buildSystemPrompt({ orgName, industry, dataContext });
 
     const rawMessages: Array<{
@@ -71,14 +63,14 @@ export async function POST(request: Request) {
     try {
       if (lastUserMessage) {
         const conversationTitle = lastUserMessage.content.slice(0, 80);
-        const { data: created } = await supabase
+        const { data: created } = await ctx.supabase
           .from('ai_conversations')
-          .insert({ org_id: profile.org_id, user_id: user.id, title: conversationTitle })
+          .insert({ org_id: ctx.orgId, user_id: ctx.userId, title: conversationTitle })
           .select('id')
           .maybeSingle<{ id: string }>();
 
         if (created) {
-          await supabase
+          await ctx.supabase
             .from('ai_messages')
             .insert({
               conversation_id: created.id,
@@ -93,13 +85,13 @@ export async function POST(request: Request) {
           request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
         const ipAddress = ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
         await logAuditEvent({
-          orgId: profile.org_id,
-          actorId: user.id,
-          actorEmail: user.email ?? null,
+          orgId: ctx.orgId,
+          actorId: ctx.userId,
+          actorEmail: profile?.email ?? null,
           action: 'ai.query',
           targetType: 'ai',
           targetId: created?.id ?? undefined,
-          description: `AI query from ${profile.full_name ?? user.email ?? 'User'}`,
+          description: `AI query from ${profile?.full_name ?? profile?.email ?? 'User'}`,
           metadata: { question: lastUserMessage.content },
           ipAddress,
         }).catch(() => undefined);
