@@ -7,6 +7,7 @@ import { Copy, RotateCw, Trash2 } from 'lucide-react';
 
 import { useUser } from '@/hooks/use-user';
 import { createClient } from '@/lib/supabase/client';
+import { ROLES, INVITABLE_ROLES, hasPermission, type Role } from '@/lib/auth/permissions';
 
 type ProfileRow = {
   id: string;
@@ -46,7 +47,9 @@ export default function TeamSettingsPage() {
   const [isInviting, setIsInviting] = useState<boolean>(false);
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
 
-  const isAdmin = profile?.role === 'owner' || profile?.role === 'admin';
+  const userRole = (profile?.role ?? 'viewer') as Role;
+  const canManageTeam = hasPermission(userRole, 'manage_team');
+  const canChangeRoles = hasPermission(userRole, 'change_roles');
 
   const loadInvites = useCallback(async () => {
     if (!org) return;
@@ -192,13 +195,20 @@ export default function TeamSettingsPage() {
 
   const handleChangeRole = async (member: ProfileRow, nextRole: string) => {
     if (!org) return;
-    if (profile?.id === member.id && profile.role === 'owner') {
-      toast.error('You cannot downgrade your own owner role from here.');
+    if (!canChangeRoles) {
+      toast.error('Only owners can change roles.');
       return;
     }
+    if (!(ROLES as readonly string[]).includes(nextRole)) return;
 
-    const allowedRoles = ['owner', 'admin', 'editor', 'member', 'viewer'];
-    if (!allowedRoles.includes(nextRole)) return;
+    // Prevent self-demotion if it would orphan the org (last owner).
+    if (profile?.id === member.id && member.role === 'owner' && nextRole !== 'owner') {
+      const ownerCount = members.filter((m) => m.role === 'owner').length;
+      if (ownerCount <= 1) {
+        toast.error('Cannot demote the last owner. Promote another member first.');
+        return;
+      }
+    }
 
     const { error } = await supabase
       .from('profiles')
@@ -219,8 +229,16 @@ export default function TeamSettingsPage() {
 
   const handleRemoveMember = async (member: ProfileRow) => {
     if (!org) return;
+    if (!canManageTeam) {
+      toast.error('You do not have permission to remove members.');
+      return;
+    }
     if (profile?.id === member.id) {
       toast.error('You cannot remove your own account here.');
+      return;
+    }
+    if (member.role === 'owner') {
+      toast.error('Cannot remove an owner. Demote them first.');
       return;
     }
 
@@ -311,29 +329,35 @@ export default function TeamSettingsPage() {
                     <td className="px-3 py-2 text-slate-100">{member.full_name ?? '—'}</td>
                     <td className="px-3 py-2 text-slate-400">{member.email ?? '—'}</td>
                     <td className="px-3 py-2">
-                      <select
-                        value={member.role}
-                        onChange={(event) => handleChangeRole(member, event.target.value)}
-                        className="rounded-xl border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:border-emerald-500/60"
-                      >
-                        <option value="owner">Owner</option>
-                        <option value="admin">Admin</option>
-                        <option value="editor">Editor</option>
-                        <option value="member">Member</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
+                      {canChangeRoles ? (
+                        <select
+                          value={member.role}
+                          onChange={(event) => handleChangeRole(member, event.target.value)}
+                          className="rounded-xl border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:border-emerald-500/60"
+                        >
+                          {ROLES.map((r) => (
+                            <option key={r} value={r}>
+                              {r.charAt(0).toUpperCase() + r.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="capitalize text-slate-300">{member.role}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-slate-500">
                       {new Date(member.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveMember(member)}
-                        className="text-xs text-slate-400 underline-offset-4 hover:text-slate-200 hover:underline"
-                      >
-                        Remove
-                      </button>
+                      {canManageTeam && profile?.id !== member.id && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMember(member)}
+                          className="text-xs text-slate-400 underline-offset-4 hover:text-slate-200 hover:underline"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -344,7 +368,7 @@ export default function TeamSettingsPage() {
       </div>
 
       {/* Invite member */}
-      {isAdmin && (
+      {canManageTeam && (
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
           <h2 className="text-sm font-semibold tracking-tight text-slate-200">Invite member</h2>
           <p className="mt-1 text-xs text-slate-500">
