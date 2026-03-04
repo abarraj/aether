@@ -29,6 +29,7 @@ import { FirstRunBanner } from '@/components/shared/first-run-banner';
 import { ComputeStatus } from '@/components/dashboard/compute-status';
 import { MetricTransparency } from '@/components/dashboard/metric-transparency';
 import { VariancePanel } from '@/components/dashboard/variance-panel';
+import { TargetIndicator } from '@/components/dashboard/target-indicator';
 import type { DateRange, Period } from '@/lib/data/metric-aggregator';
 import { cn } from '@/lib/utils';
 
@@ -818,6 +819,15 @@ export default function DashboardPage() {
             <div className="mt-3 flex items-center justify-between">
               <div className="pointer-events-auto" onClick={(e) => e.stopPropagation()}>
                 <MetricTransparency metricKey="revenue" metricLabel="Total Revenue" period={period} />
+                {kpis && (
+                  <TargetIndicator
+                    orgId={org?.id ?? null}
+                    metricKey="revenue"
+                    currentValue={kpis.revenue}
+                    period={period}
+                    formatValue={formatCurrency}
+                  />
+                )}
               </div>
               <div className="flex items-center gap-1 text-[11px] text-slate-600 group-hover:text-emerald-400 transition-colors">
                 <span>Deep dive into performance</span>
@@ -890,6 +900,15 @@ export default function DashboardPage() {
               )}
               <div onClick={(e) => e.stopPropagation()}>
                 <MetricTransparency metricKey="labor_cost" metricLabel="Staff Costs" period={period} />
+                {kpis && (
+                  <TargetIndicator
+                    orgId={org?.id ?? null}
+                    metricKey="labor_cost"
+                    currentValue={kpis.laborCost}
+                    period={period}
+                    formatValue={formatCurrency}
+                  />
+                )}
               </div>
             </div>
 
@@ -924,6 +943,15 @@ export default function DashboardPage() {
                 </div>
               )}
               <MetricTransparency metricKey="utilization" metricLabel="Capacity" period={period} />
+              {kpis && (
+                <TargetIndicator
+                  orgId={org?.id ?? null}
+                  metricKey="utilization"
+                  currentValue={kpis.utilization}
+                  period={period}
+                  formatValue={(v) => `${v.toFixed(0)}%`}
+                />
+              )}
             </div>
 
             {/* Forecast */}

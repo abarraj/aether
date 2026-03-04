@@ -472,7 +472,10 @@ export async function runComputeJob(
       await supabase.from('kpi_snapshots').insert(legacyRows);
     }
 
-    // 10. Update compute_run to completed
+    // 10. Evaluate metric targets against latest computed values
+    await evaluateTargets(supabase, orgId, metricSnapshotRows);
+
+    // 11. Update compute_run to completed
     const durationMs = Date.now() - startTime;
     await supabase
       .from('compute_runs')
@@ -731,4 +734,105 @@ function buildLegacyKpiRows(
   emit('weekly', weekly);
   emit('monthly', monthly);
   return rows;
+}
+
+// ── Target Evaluation ───────────────────────────────────────────
+
+interface TargetRow {
+  id: string;
+  metric_key: string;
+  dimension_field: string | null;
+  dimension_value: string | null;
+  period: string;
+  target_value: number;
+  comparator: string;
+  current_met: boolean;
+}
+
+type SnapshotRowForTargets = {
+  metric_key: string;
+  period: string;
+  period_start: string;
+  value: number;
+  dimensions: Record<string, unknown>;
+};
+
+/**
+ * Evaluates all active metric targets against the latest computed snapshots.
+ * Updates current_value, current_met, and last_evaluated_at on each target.
+ */
+async function evaluateTargets(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string,
+  snapshots: SnapshotRowForTargets[],
+): Promise<void> {
+  // Fetch all active targets for this org
+  const { data: targets } = await supabase
+    .from('targets')
+    .select('id, metric_key, dimension_field, dimension_value, period, target_value, comparator, current_met')
+    .eq('org_id', orgId)
+    .eq('status', 'active')
+    .returns<TargetRow[]>();
+
+  if (!targets || targets.length === 0) return;
+
+  // Index: latest snapshot value per metric_key + period (global, no dimension)
+  const latestByKey = new Map<string, number>();
+  for (const snap of snapshots) {
+    // Only consider global (empty dimensions) snapshots
+    const dimKeys = Object.keys(snap.dimensions ?? {});
+    if (dimKeys.length > 0) continue;
+
+    const key = `${snap.metric_key}:${snap.period}`;
+    // Keep the most recent period_start
+    if (!latestByKey.has(key)) {
+      latestByKey.set(key, snap.value);
+    } else {
+      // snapshots are not sorted, so we always take the last one encountered
+      latestByKey.set(key, snap.value);
+    }
+  }
+
+  // For each target, find the latest aggregate value for its metric + period
+  // and compute the sum (for additive metrics like revenue) over all periods
+  const aggregateByKey = new Map<string, number>();
+  for (const snap of snapshots) {
+    const dimKeys = Object.keys(snap.dimensions ?? {});
+    if (dimKeys.length > 0) continue;
+
+    const key = `${snap.metric_key}:${snap.period}`;
+    aggregateByKey.set(key, (aggregateByKey.get(key) ?? 0) + snap.value);
+  }
+
+  const now = new Date().toISOString();
+
+  for (const target of targets) {
+    // For targets without dimensions, use the aggregate (sum) of all periods
+    // This matches how the dashboard displays totals
+    const key = `${target.metric_key}:${target.period}`;
+    const currentValue = aggregateByKey.get(key) ?? null;
+
+    if (currentValue === null) continue;
+
+    // Evaluate whether target is met
+    let met = false;
+    if (target.comparator === 'gte') {
+      met = currentValue >= target.target_value;
+    } else if (target.comparator === 'lte') {
+      met = currentValue <= target.target_value;
+    } else {
+      met = currentValue === target.target_value;
+    }
+
+    // Update the target record
+    await supabase
+      .from('targets')
+      .update({
+        current_value: currentValue,
+        current_met: met,
+        last_evaluated_at: now,
+        updated_at: now,
+      })
+      .eq('id', target.id);
+  }
 }
