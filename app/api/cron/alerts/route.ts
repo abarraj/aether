@@ -16,7 +16,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = createAdminClient();
+    // Service role required: cron jobs have no user session.
+    const supabase = createAdminClient({ caller: 'cron-alerts' });
 
     const { data: orgs } = await supabase
       .from('organizations')

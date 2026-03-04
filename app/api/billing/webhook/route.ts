@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getStripe } from '@/lib/stripe';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -23,7 +23,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
-  const supabase = await createClient();
+  // Service role required: Stripe webhooks carry no Supabase session.
+  // Auth is provided by the Stripe signature verification above.
+  const supabase = createAdminClient({ caller: 'billing-webhook' });
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as {
