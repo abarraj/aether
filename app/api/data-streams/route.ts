@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getOrgContext } from '@/lib/auth/org-context';
-import { recomputeOrgKpis } from '@/lib/data/processor';
+import { runComputeJob } from '@/lib/data/compute-engine';
 
 interface StreamRow {
   id: string;
@@ -66,9 +66,9 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to update stream.' }, { status: 500 });
   }
 
-  // Recompute KPIs since active/paused status affects aggregation
+  // Recompute metrics since active/paused status affects aggregation
   try {
-    await recomputeOrgKpis(ctx.orgId);
+    await runComputeJob(ctx.orgId, 'stream_change', id);
   } catch {
     // Non-blocking — stream status is updated even if recompute fails
   }

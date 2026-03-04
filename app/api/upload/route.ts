@@ -11,7 +11,8 @@ import { parseCsv } from '@/lib/csv-parser';
 import { canAddDataSource } from '@/lib/billing/queries';
 import { logAuditEvent } from '@/lib/audit';
 import { extractEntities, type OntologyMapping } from '@/lib/data/ontology-extractor';
-import { processUploadData, recomputeOrgKpis } from '@/lib/data/processor';
+import { processUploadData } from '@/lib/data/processor';
+import { runComputeJob } from '@/lib/data/compute-engine';
 import { computePerformanceGaps } from '@/lib/data/performance-gaps';
 import { buildOntologyFromDetection } from '@/lib/data/ontology-builder';
 import type { OntologyDetection } from '@/lib/ai/ontology-detector';
@@ -266,10 +267,9 @@ export async function POST(request: NextRequest) {
     }
 
     // ── STAGE: Committed ────────────────────────────────────────────
-    // Step 1: Process KPI snapshots for this upload, then recompute
-    // across all active streams for deterministic aggregation
-    await processUploadData(ctx.orgId, uploadRecord.id);
-    await recomputeOrgKpis(ctx.orgId);
+    // Step 1: Run deterministic compute job across all active streams.
+    // This writes both metric_snapshots (new) and kpi_snapshots (legacy).
+    await runComputeJob(ctx.orgId, 'upload', uploadRecord.id);
 
     // Step 2: Build ontology (gap engine needs entity_types first)
     const detectionRaw = formData.get('detection');
