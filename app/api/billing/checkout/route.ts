@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { stripe } from '@/lib/stripe';
+import { getStripe } from '@/lib/stripe';
 import { createClient } from '@/lib/supabase/server';
 
 const PRICE_MAP: Record<string, string | undefined> = {
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
       'http://localhost:3000';
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await getStripe().checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
-import { claudeClient } from '@/lib/ai/claude';
+import { claude } from '@/lib/ai/claude';
 import { buildDataContext } from '@/lib/ai/data-context';
 
 type ProfileOrg = { org_id: string | null };
@@ -43,7 +43,7 @@ export async function GET() {
       return NextResponse.json({ text: null });
     }
 
-    const completion = await claudeClient.messages.create({
+    const completion = await claude().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 200,
       system:

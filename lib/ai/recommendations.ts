@@ -3,7 +3,7 @@
 import { subDays, formatISO } from 'date-fns';
 
 import { createClient as createServerClient } from '@/lib/supabase/server';
-import { claudeClient } from '@/lib/ai/claude';
+import { claude } from '@/lib/ai/claude';
 
 type SnapshotRow = {
   date: string;
@@ -69,7 +69,7 @@ export async function generateRecommendations(orgId: string): Promise<Recommenda
         `${c.date}: ${formatCurrency(rc)}`,
       ].join('\n');
 
-      const completion = await claudeClient.messages.create({
+      const completion = await claude().messages.create({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 256,
         system:
@@ -130,7 +130,7 @@ export async function generateRecommendations(orgId: string): Promise<Recommenda
   if (revenueTotal > 0) {
     const ratio = laborCostTotal / revenueTotal;
     if (ratio > 0.35) {
-      const completion = await claudeClient.messages.create({
+      const completion = await claude().messages.create({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 256,
         system:
@@ -200,7 +200,7 @@ export async function generateRecommendations(orgId: string): Promise<Recommenda
       )
       .join('\n');
 
-    const completion = await claudeClient.messages.create({
+    const completion = await claude().messages.create({
       model: 'claude-3-5-sonnet-20241022',
       max_tokens: 256,
       system:
@@ -252,7 +252,7 @@ export async function generateRecommendations(orgId: string): Promise<Recommenda
       )
       .join('\n');
 
-    const completion = await claudeClient.messages.create({
+    const completion = await claude().messages.create({
       model: 'claude-3-5-sonnet-20241022',
       max_tokens: 256,
       system:
