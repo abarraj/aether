@@ -361,6 +361,7 @@ export default function DataModelPage() {
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
   const isDragging = useRef<string | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const dragMoved = useRef(false);
 
   // Undo stack for drag positions
   const undoStack = useRef<Array<Record<string, { x: number; y: number }>>>([]);
@@ -444,6 +445,7 @@ export default function DataModelPage() {
       setGraphTranslate({ x: panStart.current.tx + dx, y: panStart.current.ty + dy });
     }
     if (isDragging.current) {
+      dragMoved.current = true;
       const nodeId = isDragging.current;
       const rect = graphContainerRef.current?.getBoundingClientRect();
       if (rect) {
@@ -457,14 +459,19 @@ export default function DataModelPage() {
   const handlePanEnd = useCallback(() => {
     isPanning.current = false;
     if (isDragging.current) {
+      // If we didn't actually move, pop the undo stack (we pushed on mousedown)
+      if (!dragMoved.current && undoStack.current.length > 0) {
+        undoStack.current.pop();
+      }
       isDragging.current = null;
     }
   }, []);
 
-  // Zoom handler
+  // Zoom handler — attached via React onWheel (passive: false by default in React)
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = -e.deltaY * 0.001;
+    e.stopPropagation();
+    const delta = -e.deltaY * 0.0015;
     setGraphScale((prev) => Math.min(2, Math.max(0.4, prev + delta)));
   }, []);
 
@@ -480,6 +487,7 @@ export default function DataModelPage() {
     undoStack.current.push({ ...dragPositions });
     if (undoStack.current.length > 20) undoStack.current.shift();
     isDragging.current = nodeId;
+    dragMoved.current = false;
   }, [graphScale, graphTranslate, dragPositions]);
 
   // Compute connected node IDs for selection focus
@@ -1059,6 +1067,12 @@ export default function DataModelPage() {
             onMouseLeave={handlePanEnd}
             onWheel={handleWheel}
             onContextMenu={(e) => e.preventDefault()}
+            onClick={(e) => {
+              // Click on background (not on a node) deselects
+              if (e.target === e.currentTarget || e.target === graphContainerRef.current) {
+                setSelectedTypeId(null);
+              }
+            }}
           >
             {/* Graph controls */}
             <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
@@ -1090,6 +1104,17 @@ export default function DataModelPage() {
                 {Math.round(graphScale * 100)}%
               </span>
             </div>
+
+            {/* Interaction hints */}
+            {entityTypes.length > 0 && (
+              <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 text-[9px] text-slate-600">
+                <span>Drag nodes to arrange</span>
+                <span>·</span>
+                <span>Scroll to zoom</span>
+                <span>·</span>
+                <span>Ctrl+Z to undo</span>
+              </div>
+            )}
 
             {entityTypes.length === 0 ? (
               <div className="flex h-[520px] flex-col items-center justify-center gap-4 px-8 text-center">
@@ -1267,7 +1292,7 @@ export default function DataModelPage() {
                         key={et.id}
                         type="button"
                         onClick={() => {
-                          if (!isDragging.current) setSelectedTypeId(et.id);
+                          if (!dragMoved.current) setSelectedTypeId(et.id);
                         }}
                         onMouseDown={(e) => handleNodeDragStart(e, et.id, nodePos)}
                         className="absolute rounded-xl border shadow-md focus:outline-none"
