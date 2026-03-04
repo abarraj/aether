@@ -1,7 +1,10 @@
-// API route handling CSV uploads, storage, and data row creation.
+// API route handling CSV uploads with pipeline stages:
+// staging → validated → committed. Creates data_stream + stream_version
+// records alongside the legacy upload record for traceability.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 
 import { getOrgContext } from '@/lib/auth/org-context';
 import { parseCsv } from '@/lib/csv-parser';
@@ -18,6 +21,12 @@ import {
   normalizeDate,
 } from '@/lib/data/date-mapping';
 import { normalizeColumnMapping } from '@/lib/data/normalize-column-mapping';
+
+function getClientIp(request: NextRequest): string | null {
+  const ipHeader =
+    request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
+  return ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -88,7 +97,54 @@ export async function POST(request: NextRequest) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    const fileChecksum = createHash('sha256').update(buffer).digest('hex');
 
+    // ── STAGE: Staging ──────────────────────────────────────────────
+    // Create data_stream (or reuse existing for same data_type)
+    let streamId: string | null = null;
+    const { data: existingStream } = await ctx.supabase
+      .from('data_streams')
+      .select('id')
+      .eq('org_id', ctx.orgId)
+      .eq('data_type', dataType)
+      .eq('source_type', 'csv_upload')
+      .eq('status', 'active')
+      .maybeSingle<{ id: string }>();
+
+    if (existingStream) {
+      streamId = existingStream.id;
+    } else {
+      const { data: newStream } = await ctx.supabase
+        .from('data_streams')
+        .insert({
+          org_id: ctx.orgId,
+          name: file.name.replace(/\.[^.]+$/, ''),
+          source_type: 'csv_upload',
+          data_type: dataType,
+          status: 'active',
+          created_by: ctx.userId,
+        })
+        .select('id')
+        .maybeSingle<{ id: string }>();
+
+      streamId = newStream?.id ?? null;
+    }
+
+    // Determine next version number
+    let versionNumber = 1;
+    if (streamId) {
+      const { data: latestVersion } = await ctx.supabase
+        .from('stream_versions')
+        .select('version')
+        .eq('stream_id', streamId)
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle<{ version: number }>();
+
+      versionNumber = (latestVersion?.version ?? 0) + 1;
+    }
+
+    // Upload file to storage
     const sanitizedName = file.name.replace(/\s+/g, '-');
     const objectPath = `${ctx.orgId}/${Date.now()}-${sanitizedName}`;
 
@@ -103,6 +159,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to store file.' }, { status: 500 });
     }
 
+    // Create upload record linked to stream
     const { data: uploadRecord, error: uploadError } = await ctx.supabase
       .from('uploads')
       .insert({
@@ -113,7 +170,8 @@ export async function POST(request: NextRequest) {
         file_size: file.size,
         data_type: dataType,
         column_mapping: columnMapping,
-        status: 'processing',
+        status: 'staging',
+        stream_id: streamId,
       })
       .select('id')
       .maybeSingle<{ id: string }>();
@@ -122,6 +180,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create upload record.' }, { status: 500 });
     }
 
+    // Create stream_version in 'staging'
+    let streamVersionId: string | null = null;
+    if (streamId) {
+      const { data: sv } = await ctx.supabase
+        .from('stream_versions')
+        .insert({
+          org_id: ctx.orgId,
+          stream_id: streamId,
+          upload_id: uploadRecord.id,
+          version: versionNumber,
+          file_checksum: fileChecksum,
+          status: 'staging',
+        })
+        .select('id')
+        .maybeSingle<{ id: string }>();
+
+      streamVersionId = sv?.id ?? null;
+
+      // Link stream_version_id back to upload
+      if (streamVersionId) {
+        await ctx.supabase
+          .from('uploads')
+          .update({ stream_version_id: streamVersionId })
+          .eq('id', uploadRecord.id);
+      }
+    }
+
+    // ── STAGE: Validated ────────────────────────────────────────────
+    // Parse CSV and create data_rows
     const text = buffer.toString('utf-8');
     const { rows } = parseCsv(text);
     const rowCount = rows.length;
@@ -129,13 +216,6 @@ export async function POST(request: NextRequest) {
     if (rowCount > 0) {
       const mapping = columnMapping as Record<string, string>;
       const dateHeader = Object.entries(mapping).find(([, role]) => role === 'date')?.[0] ?? null;
-
-      console.log('Upload date mapping', {
-        uploadId: uploadRecord.id,
-        hasMapping: Object.keys(mapping).length > 0,
-        dateHeader,
-        sampleKeys: rows?.[0] ? Object.keys(rows[0]).slice(0, 8) : [],
-      });
 
       const rowsToInsert = rows.map((row) => {
         const rowAsRecord = row as Record<string, unknown>;
@@ -148,44 +228,48 @@ export async function POST(request: NextRequest) {
           data_type: dataType,
           data: row,
           date: normalized,
+          stream_id: streamId,
+          stream_version_id: streamVersionId,
         };
-      });
-
-      const nullDates = rowsToInsert.reduce((acc, r) => acc + (r.date ? 0 : 1), 0);
-      console.log('Upload date results', {
-        uploadId: uploadRecord.id,
-        total: rowsToInsert.length,
-        nullDates,
       });
 
       const { error: rowsError } = await ctx.supabase.from('data_rows').insert(rowsToInsert);
 
       if (rowsError) {
+        // Mark as error in both upload and stream_version
         await ctx.supabase
           .from('uploads')
           .update({ status: 'error', error_message: 'Failed to create data rows.' })
           .eq('id', uploadRecord.id);
+        if (streamVersionId) {
+          await ctx.supabase
+            .from('stream_versions')
+            .update({ status: 'rejected', error_message: 'Failed to create data rows.' })
+            .eq('id', streamVersionId);
+        }
 
         return NextResponse.json({ error: 'Failed to create data rows.' }, { status: 500 });
       }
     }
 
-    const { error: updateError } = await ctx.supabase
+    // Data parsed and rows created — mark as validated
+    await ctx.supabase
       .from('uploads')
-      .update({
-        status: 'processing',
-        row_count: rowCount,
-      })
+      .update({ status: 'processing', row_count: rowCount })
       .eq('id', uploadRecord.id);
 
-    if (updateError) {
-      return NextResponse.json({ error: 'Failed to finalize upload.' }, { status: 500 });
+    if (streamVersionId) {
+      await ctx.supabase
+        .from('stream_versions')
+        .update({ status: 'validated', validated_at: new Date().toISOString(), row_count: rowCount })
+        .eq('id', streamVersionId);
     }
 
+    // ── STAGE: Committed ────────────────────────────────────────────
     // Step 1: Process KPI snapshots
     await processUploadData(ctx.orgId, uploadRecord.id);
 
-    // Step 2: Build ontology FIRST (gap engine needs entity_types)
+    // Step 2: Build ontology (gap engine needs entity_types first)
     const detectionRaw = formData.get('detection');
     if (
       typeof detectionRaw === 'string' &&
@@ -199,6 +283,21 @@ export async function POST(request: NextRequest) {
           (detection.confidence ?? 0) > 0.3 &&
           (detection.entityTypes?.length ?? 0) > 0
         ) {
+          // Create mapping_run record for traceability
+          if (streamVersionId) {
+            await ctx.supabase.from('mapping_runs').insert({
+              org_id: ctx.orgId,
+              stream_version_id: streamVersionId,
+              column_mapping: columnMapping,
+              entity_mapping: detection.entityTypes ?? [],
+              overall_confidence: detection.confidence ?? 0,
+              needs_review: (detection.confidence ?? 0) < 0.7,
+              review_status: (detection.confidence ?? 0) >= 0.7 ? 'approved' : 'pending',
+              approved_by: (detection.confidence ?? 0) >= 0.7 ? ctx.userId : null,
+              approved_at: (detection.confidence ?? 0) >= 0.7 ? new Date().toISOString() : null,
+            });
+          }
+
           const { data: dataRows } = await ctx.supabase
             .from('data_rows')
             .select('data')
@@ -222,13 +321,6 @@ export async function POST(request: NextRequest) {
               allRows,
             );
 
-            const ipHeader =
-              request.headers.get('x-forwarded-for') ??
-              request.headers.get('x-real-ip');
-            const ipAddress = ipHeader
-              ? ipHeader.split(',')[0]?.trim() ?? null
-              : null;
-
             await logAuditEvent({
               orgId: ctx.orgId,
               actorId: ctx.userId,
@@ -245,7 +337,7 @@ export async function POST(request: NextRequest) {
                 relationshipsCreated: counts.relationshipsCreated,
                 confidence: detection.confidence,
               },
-              ipAddress,
+              ipAddress: getClientIp(request),
             });
           }
         }
@@ -261,15 +353,22 @@ export async function POST(request: NextRequest) {
       console.error('Performance gap computation failed:', gapErr);
     }
 
-    // Step 4: Mark as ready
+    // Step 4: Mark as committed (ready)
     await ctx.supabase
       .from('uploads')
       .update({ status: 'ready' })
       .eq('id', uploadRecord.id);
 
-    const ipHeader =
-      request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
-    const ipAddress = ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
+    if (streamVersionId) {
+      await ctx.supabase
+        .from('stream_versions')
+        .update({
+          status: 'committed',
+          committed_at: new Date().toISOString(),
+          committed_by: ctx.userId,
+        })
+        .eq('id', streamVersionId);
+    }
 
     // Handle manual ontology mapping if provided
     let ontologyResult: { entitiesCreated: number; relationshipsCreated: number } | undefined;
@@ -290,12 +389,20 @@ export async function POST(request: NextRequest) {
         data_type: dataType,
         row_count: rowCount,
         file_size: file.size,
+        stream_id: streamId,
+        stream_version: versionNumber,
       },
-      ipAddress,
+      ipAddress: getClientIp(request),
     });
 
     return NextResponse.json(
-      { id: uploadRecord.id, rowCount, ontology: ontologyResult },
+      {
+        id: uploadRecord.id,
+        rowCount,
+        ontology: ontologyResult,
+        streamId,
+        streamVersionId,
+      },
       { status: 200 },
     );
   } catch (error) {
