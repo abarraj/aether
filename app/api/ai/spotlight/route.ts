@@ -4,20 +4,10 @@ import { getOrgContext } from '@/lib/auth/org-context';
 import { claude } from '@/lib/ai/claude';
 import { buildDataContext } from '@/lib/ai/data-context';
 
-// Simple in-memory cache
-const cache = new Map<string, { text: string; timestamp: number }>();
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
-
 export async function GET() {
   try {
     const ctx = await getOrgContext();
     if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    // Check cache
-    const cached = cache.get(ctx.orgId);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return NextResponse.json({ text: cached.text });
-    }
 
     const { data: org } = await ctx.supabase
       .from('organizations')
@@ -56,8 +46,6 @@ export async function GET() {
       .map((part) => ('text' in part ? part.text : ''))
       .join('')
       .trim();
-
-    cache.set(ctx.orgId, { text, timestamp: Date.now() });
 
     return NextResponse.json({ text });
   } catch (err) {
