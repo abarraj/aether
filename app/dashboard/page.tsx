@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { AnimatedNumber } from '@/components/shared/animated-number';
 import { FirstRunBanner } from '@/components/shared/first-run-banner';
 import { ComputeStatus } from '@/components/dashboard/compute-status';
+import { MetricTransparency } from '@/components/dashboard/metric-transparency';
 import type { DateRange, Period } from '@/lib/data/metric-aggregator';
 import { cn } from '@/lib/utils';
 
@@ -813,9 +814,14 @@ export default function DashboardPage() {
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="mt-3 flex items-center gap-1 text-[11px] text-slate-600 group-hover:text-emerald-400 transition-colors">
-              <span>Deep dive into performance</span>
-              <ChevronRight className="h-3 w-3" />
+            <div className="mt-3 flex items-center justify-between">
+              <div className="pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+                <MetricTransparency metricKey="revenue" metricLabel="Total Revenue" period={period} />
+              </div>
+              <div className="flex items-center gap-1 text-[11px] text-slate-600 group-hover:text-emerald-400 transition-colors">
+                <span>Deep dive into performance</span>
+                <ChevronRight className="h-3 w-3" />
+              </div>
             </div>
           </motion.div>
 
@@ -881,6 +887,9 @@ export default function DashboardPage() {
                   })()}
                 </div>
               )}
+              <div onClick={(e) => e.stopPropagation()}>
+                <MetricTransparency metricKey="labor_cost" metricLabel="Staff Costs" period={period} />
+              </div>
             </div>
 
             {/* Capacity */}
@@ -913,6 +922,7 @@ export default function DashboardPage() {
                   Industry avg: {benchmark.median_capacity.toFixed(0)}%
                 </div>
               )}
+              <MetricTransparency metricKey="utilization" metricLabel="Capacity" period={period} />
             </div>
 
             {/* Forecast */}
