@@ -171,6 +171,12 @@ You think like a management consultant who's been handed a spreadsheet and needs
 
 3. RELATIONSHIPS: If two entity columns appear in the same row, the entities in those columns have a relationship. An instructor column and a location column in the same row means instructors work at locations.
 
+   IMPORTANT — Transaction role semantics:
+   - If data has buyer/seller, payer/payee, from/to, sender/receiver columns, treat each role as a SEPARATE entity type even if the values overlap
+   - Example: "Buyer" and "Seller" columns should become distinct entity types (buyer, seller), NOT merged into a single "party" type
+   - Name the relationship directionally: buyer "purchased_from" seller, payer "paid" payee
+   - NEVER create a relationship where fromTypeSlug === toTypeSlug from the SAME column (self-referencing)
+
 4. METRICS: Which columns are the core business metrics? Identify date columns, revenue columns, cost columns, attendance/volume columns.
 
 Be conservative. Only detect clear, obvious entity types. A column with 100 unique values out of 100 rows is NOT an entity — it's an identifier. A column with 3-30 unique values out of 100+ rows IS likely an entity.

@@ -10,6 +10,7 @@ import type {
   OntologyDetection,
 } from '@/lib/ai/ontology-detector';
 import type { EntityProperty } from '@/types/domain';
+import { normalizeEntityName } from '@/lib/data/entity-synonyms';
 
 function toEntityProperties(aggregated: DetectedEntityType['aggregatedProperties']): EntityProperty[] {
   return aggregated.map((p) => ({
@@ -90,7 +91,7 @@ export async function buildOntologyFromDetection(
     .returns<EntityRow[]>();
 
   for (const e of existingEntities ?? []) {
-    const key = `${e.entity_type_id}:${(e.name ?? '').trim().toLowerCase()}`;
+    const key = `${e.entity_type_id}:${normalizeEntityName(e.name ?? '')}`;
     existingEntitiesByTypeAndName.set(key, e);
   }
 
@@ -133,7 +134,7 @@ export async function buildOntologyFromDetection(
         props[prop.key] = computed;
       }
 
-      const key = `${typeId}:${entityName.toLowerCase()}`;
+      const key = `${typeId}:${normalizeEntityName(entityName)}`;
       const existing = existingEntitiesByTypeAndName.get(key);
 
       if (existing) {
@@ -181,7 +182,7 @@ export async function buildOntologyFromDetection(
 
   const entityIdByTypeAndName = new Map<string, string>();
   for (const e of allEntities ?? []) {
-    const k = `${e.entity_type_id}:${(e.name ?? '').trim().toLowerCase()}`;
+    const k = `${e.entity_type_id}:${normalizeEntityName(e.name ?? '')}`;
     entityIdByTypeAndName.set(k, e.id);
   }
 
@@ -242,13 +243,16 @@ export async function buildOntologyFromDetection(
       const fromVal = row[fromCol] != null ? String(row[fromCol]).trim() : '';
       const toVal = row[toCol] != null ? String(row[toCol]).trim() : '';
       if (!fromVal || !toVal) continue;
-      const pairKey = `${fromVal.toLowerCase()}:${toVal.toLowerCase()}`;
+      const pairKey = `${normalizeEntityName(fromVal)}:${normalizeEntityName(toVal)}`;
       if (seen.has(pairKey)) continue;
       seen.add(pairKey);
 
-      const fromEntityId = entityIdByTypeAndName.get(`${fromTypeId}:${fromVal.toLowerCase()}`);
-      const toEntityId = entityIdByTypeAndName.get(`${toTypeId}:${toVal.toLowerCase()}`);
+      const fromEntityId = entityIdByTypeAndName.get(`${fromTypeId}:${normalizeEntityName(fromVal)}`);
+      const toEntityId = entityIdByTypeAndName.get(`${toTypeId}:${normalizeEntityName(toVal)}`);
       if (!fromEntityId || !toEntityId) continue;
+
+      // Self-loop guard: skip if from and to point to the same entity
+      if (fromEntityId === toEntityId) continue;
 
       const tripleKey = `${relTypeId}:${fromEntityId}:${toEntityId}`;
       if (existingRels.has(tripleKey)) continue;
