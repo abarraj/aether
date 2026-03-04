@@ -760,6 +760,7 @@ type SnapshotRowForTargets = {
 /**
  * Evaluates all active metric targets against the latest computed snapshots.
  * Updates current_value, current_met, and last_evaluated_at on each target.
+ * Creates alerts when a target transitions from met → not met.
  */
 async function evaluateTargets(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -805,6 +806,14 @@ async function evaluateTargets(
   }
 
   const now = new Date().toISOString();
+  const alertsToCreate: {
+    org_id: string;
+    type: string;
+    severity: string;
+    title: string;
+    description: string;
+    data: Record<string, unknown>;
+  }[] = [];
 
   for (const target of targets) {
     // For targets without dimensions, use the aggregate (sum) of all periods
@@ -824,6 +833,41 @@ async function evaluateTargets(
       met = currentValue === target.target_value;
     }
 
+    // Detect transition: was previously met (or first evaluation) → now not met
+    const wasMet = target.current_met;
+    if (!met && wasMet) {
+      const comp = target.comparator === 'gte' ? '>=' : target.comparator === 'lte' ? '<=' : '=';
+      const gap = Math.abs(currentValue - target.target_value);
+      const gapPct = target.target_value > 0
+        ? ((gap / target.target_value) * 100).toFixed(1)
+        : '0';
+      const dimStr = target.dimension_value
+        ? ` for ${target.dimension_value}`
+        : '';
+
+      alertsToCreate.push({
+        org_id: orgId,
+        type: 'target_missed',
+        severity: Number(gapPct) > 20 ? 'critical' : Number(gapPct) > 10 ? 'warning' : 'info',
+        title: `Target missed: ${target.metric_key}${dimStr}`,
+        description:
+          `${target.metric_key} is ${currentValue.toLocaleString()} but target is ${comp} ${target.target_value.toLocaleString()} (${target.period}). ` +
+          `Gap: ${gap.toLocaleString()} (${gapPct}%).`,
+        data: {
+          target_id: target.id,
+          metric_key: target.metric_key,
+          period: target.period,
+          target_value: target.target_value,
+          current_value: currentValue,
+          comparator: target.comparator,
+          gap,
+          gap_pct: Number(gapPct),
+          dimension_field: target.dimension_field,
+          dimension_value: target.dimension_value,
+        },
+      });
+    }
+
     // Update the target record
     await supabase
       .from('targets')
@@ -834,5 +878,33 @@ async function evaluateTargets(
         updated_at: now,
       })
       .eq('id', target.id);
+  }
+
+  // Create alerts for missed targets (deduplicated: only on transition)
+  if (alertsToCreate.length > 0) {
+    // Check for existing unread/undismissed target_missed alerts to avoid duplicates
+    const targetIds = alertsToCreate.map((a) => (a.data as Record<string, unknown>).target_id as string);
+
+    const { data: existingAlerts } = await supabase
+      .from('alerts')
+      .select('data')
+      .eq('org_id', orgId)
+      .eq('type', 'target_missed')
+      .eq('is_dismissed', false)
+      .returns<{ data: { target_id?: string } }[]>();
+
+    const existingTargetIds = new Set(
+      (existingAlerts ?? [])
+        .map((a) => a.data?.target_id)
+        .filter((id): id is string => typeof id === 'string'),
+    );
+
+    const newAlerts = alertsToCreate.filter(
+      (a) => !existingTargetIds.has((a.data as Record<string, unknown>).target_id as string),
+    );
+
+    if (newAlerts.length > 0) {
+      await supabase.from('alerts').insert(newAlerts);
+    }
   }
 }
