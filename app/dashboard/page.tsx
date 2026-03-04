@@ -28,6 +28,7 @@ import { AnimatedNumber } from '@/components/shared/animated-number';
 import { FirstRunBanner } from '@/components/shared/first-run-banner';
 import { ComputeStatus } from '@/components/dashboard/compute-status';
 import { MetricTransparency } from '@/components/dashboard/metric-transparency';
+import { VariancePanel } from '@/components/dashboard/variance-panel';
 import type { DateRange, Period } from '@/lib/data/metric-aggregator';
 import { cn } from '@/lib/utils';
 
@@ -1120,6 +1121,27 @@ export default function DashboardPage() {
               </ResponsiveContainer>
             </div>
           </motion.div>
+
+          {/* Row 5: Variance, Correlation & Opportunities */}
+          {hasSeries && kpis && (period === 'daily' ? (
+            <VariancePanel
+              orgId={org?.id ?? null}
+              period="weekly"
+              revenue={kpis.revenue}
+              laborCost={kpis.laborCost}
+              utilization={kpis.utilization}
+              attendance={kpis.attendance}
+            />
+          ) : period === 'weekly' || period === 'monthly' ? (
+            <VariancePanel
+              orgId={org?.id ?? null}
+              period={period}
+              revenue={kpis.revenue}
+              laborCost={kpis.laborCost}
+              utilization={kpis.utilization}
+              attendance={kpis.attendance}
+            />
+          ) : null)}
         </>
       )}
     </div>
