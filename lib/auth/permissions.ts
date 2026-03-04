@@ -29,6 +29,9 @@ export const PERMISSIONS = [
   'upload_data',
   'export_data',
 
+  // Targets
+  'manage_targets',   // create/edit/delete metric targets (Owner + Admin)
+
   // Team & org management
   'manage_team',       // invite/remove members
   'change_roles',      // change another member's role (owner only)
@@ -60,6 +63,7 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     'edit_data',
     'upload_data',
     'export_data',
+    'manage_targets',
     'manage_team',
     'manage_integrations',
     'view_audit_log',
