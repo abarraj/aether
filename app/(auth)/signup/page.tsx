@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Lock, Mail, Chrome } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -12,18 +12,24 @@ import { createClient } from '@/lib/supabase/client';
 
 export default function SignupPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  const next = searchParams.get('next');
+  const safeNext = next?.startsWith('/') ? next : null;
 
   const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [rememberMe, setRememberMe] = useState<boolean>(true);
   const [isPasswordSignupLoading, setIsPasswordSignupLoading] = useState<boolean>(false);
   const [isMagicLinkLoading, setIsMagicLinkLoading] = useState<boolean>(false);
   const [isOAuthLoading, setIsOAuthLoading] = useState<boolean>(false);
 
-  const redirectTo =
+  const callbackBase =
     typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '/auth/callback';
+  const redirectTo = safeNext
+    ? `${callbackBase}?next=${encodeURIComponent(safeNext)}`
+    : callbackBase;
 
   type ProfileOrg = {
     org_id: string | null;
@@ -97,8 +103,8 @@ export default function SignupPage() {
         // Audit logging failure should not block signup.
       }
 
-      toast.success('Account created. Let’s set up your workspace.');
-      router.push(hasOrg ? '/dashboard' : '/onboarding');
+      toast.success(‘Account created. Let’s set up your workspace.’);
+      router.push(safeNext ?? (hasOrg ? ‘/dashboard’ : ‘/onboarding’));
     } catch {
       toast.error('Something went wrong creating your account.');
     } finally {
@@ -220,18 +226,6 @@ export default function SignupPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0"
-              />
-              <span className="text-sm text-slate-400">Remember me</span>
-            </label>
-          </div>
-
           <Button
             type="submit"
             className="w-full rounded-2xl bg-emerald-500 text-sm font-medium text-slate-950 transition-all hover:bg-emerald-600 active:scale-[0.985]"
@@ -276,7 +270,9 @@ export default function SignupPage() {
           <button
             type="button"
             className="text-slate-400 underline-offset-4 hover:text-slate-200 hover:underline"
-            onClick={() => router.push('/login')}
+            onClick={() =>
+              router.push(safeNext ? `/login?next=${encodeURIComponent(safeNext)}` : '/login')
+            }
           >
             Sign in
           </button>
@@ -286,7 +282,7 @@ export default function SignupPage() {
       <div className="mt-6 text-center text-xs text-slate-500">
         <span className="mr-1">Looking to access an existing workspace?</span>
         <Link
-          href="/login"
+          href={safeNext ? `/login?next=${encodeURIComponent(safeNext)}` : '/login'}
           className="text-slate-300 underline-offset-4 hover:text-emerald-400 hover:underline"
         >
           Go to login

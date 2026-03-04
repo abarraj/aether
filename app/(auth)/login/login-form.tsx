@@ -20,7 +20,6 @@ export default function LoginForm() {
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [rememberMe, setRememberMe] = useState<boolean>(true);
   const [showForgotPassword, setShowForgotPassword] = useState<boolean>(false);
   const [resetEmail, setResetEmail] = useState<string>('');
   const [resetSent, setResetSent] = useState<boolean>(false);
@@ -202,16 +201,7 @@ export default function LoginForm() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0"
-              />
-              <span className="text-sm text-slate-400">Remember me</span>
-            </label>
+          <div className="flex items-center justify-end">
             <button
               type="button"
               onClick={() => {
@@ -366,7 +356,7 @@ export default function LoginForm() {
       <div className="mt-6 text-center text-xs text-slate-500">
         <span className="mr-1">New to Aether?</span>
         <Link
-          href="/signup"
+          href={safeNext ? `/signup?next=${encodeURIComponent(safeNext)}` : '/signup'}
           className="text-slate-300 underline-offset-4 hover:text-emerald-400 hover:underline"
         >
           Sign up
