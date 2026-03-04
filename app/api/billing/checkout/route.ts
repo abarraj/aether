@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getStripe } from '@/lib/stripe';
-import { getOrgContext } from '@/lib/auth/org-context';
+import { requirePermission } from '@/lib/auth/org-context';
 
 const PRICE_MAP: Record<string, string | undefined> = {
   starter: process.env.STRIPE_STARTER_PRICE_ID,
@@ -10,8 +10,9 @@ const PRICE_MAP: Record<string, string | undefined> = {
 
 export async function POST(request: NextRequest) {
   try {
-    const ctx = await getOrgContext();
-    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const result = await requirePermission('manage_billing');
+    if (result instanceof NextResponse) return result;
+    const ctx = result;
 
     const { data: { user } } = await ctx.supabase.auth.getUser();
 

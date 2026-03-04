@@ -229,19 +229,9 @@ export default function OnboardingPage() {
         return;
       }
 
-      const newOrgId: string | undefined = org.id;
-
-      if (isMultiBrand && newOrgId) {
-        await supabase.from('org_memberships').insert({
-          user_id: user.id,
-          org_id: newOrgId,
-          role: 'owner',
-        });
-      }
-
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({ org_id: org.id })
+        .update({ org_id: org.id, role: 'owner' })
         .eq('id', user.id);
 
       if (profileError) {

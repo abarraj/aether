@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { logAuditEvent } from '@/lib/audit';
-import { getOrgContext } from '@/lib/auth/org-context';
+import { requirePermission } from '@/lib/auth/org-context';
 
 type ClientAuditPayload = {
   action: string;
@@ -15,10 +15,9 @@ type ClientAuditPayload = {
 
 export async function POST(request: NextRequest) {
   try {
-    const ctx = await getOrgContext();
-    if (!ctx) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const result = await requirePermission('view_audit_log');
+    if (result instanceof NextResponse) return result;
+    const ctx = result;
 
     const { data: profile } = await ctx.supabase
       .from('profiles')

@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getOrgContext } from '@/lib/auth/org-context';
+import { requirePermission } from '@/lib/auth/org-context';
 import { generateApiKey } from '@/lib/api-keys';
 import { logAuditEvent } from '@/lib/audit';
 
@@ -21,10 +21,9 @@ type ApiKeyRow = {
 };
 
 export async function GET() {
-  const ctx = await getOrgContext();
-  if (!ctx) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const result = await requirePermission('manage_integrations');
+  if (result instanceof NextResponse) return result;
+  const ctx = result;
 
   const { data } = await ctx.supabase
     .from('api_keys')
@@ -45,10 +44,9 @@ type CreateBody = {
 };
 
 export async function POST(request: NextRequest) {
-  const ctx = await getOrgContext();
-  if (!ctx) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const result = await requirePermission('manage_integrations');
+  if (result instanceof NextResponse) return result;
+  const ctx = result;
 
   const body = (await request.json()) as CreateBody;
 

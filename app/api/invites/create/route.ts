@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
+import { requirePermission } from '@/lib/auth/org-context';
 import {
   generateTokenPair,
   buildInviteLink,
@@ -9,11 +9,9 @@ import {
 } from '@/lib/invites';
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const result = await requirePermission('manage_team');
+  if (result instanceof NextResponse) return result;
+  const ctx = result;
 
   const body = await req.json();
   const email = String(body.email ?? '').trim().toLowerCase();
@@ -29,15 +27,6 @@ export async function POST(req: Request) {
     );
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('org_id')
-    .eq('id', user.id)
-    .maybeSingle();
-  if (!profile?.org_id) {
-    return NextResponse.json({ error: 'Organization not found' }, { status: 400 });
-  }
-
   const { rawToken, tokenHash } = generateTokenPair();
 
   let inviteLink: string;
@@ -47,14 +36,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing NEXT_PUBLIC_APP_URL' }, { status: 500 });
   }
 
-  const { data: invite, error } = await supabase
+  const { data: invite, error } = await ctx.supabase
     .from('invites')
     .insert({
-      org_id: profile.org_id,
+      org_id: ctx.orgId,
       email,
       role,
       token_hash: tokenHash,
-      invited_by: user.id,
+      invited_by: ctx.userId,
       expires_at: new Date(Date.now() + INVITE_TTL_MS).toISOString(),
     })
     .select('id, org_id, email, role, created_at, expires_at')
