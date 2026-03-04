@@ -2,6 +2,11 @@
 
 import { useState, useRef, type FormEvent } from 'react';
 import {
+  motion,
+  useScroll,
+  useTransform,
+} from 'framer-motion';
+import {
   Database,
   LineChart,
   Brain,
@@ -12,6 +17,17 @@ import {
   Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+// ── Animation helpers ───────────────────────────────────────────────
+const FADE_UP = {
+  hidden: { opacity: 0, y: 24 },
+  visible: { opacity: 1, y: 0 },
+} as const;
+
+const STAGGER_CONTAINER = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.12 } },
+} as const;
 
 import { PLANS } from '@/lib/billing/plans';
 import { APP_URL } from '@/lib/constants/domains';
@@ -86,15 +102,78 @@ const PLAN_FEATURES: Record<Plan, string[]> = {
   ],
 };
 
+// ── Scroll-scrubbed How It Works steps ──────────────────────────────
+function HowItWorksSteps() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ['start 0.8', 'end 0.5'],
+  });
+
+  // Map scroll progress 0→1 to stroke-dashoffset 100%→0%
+  const lineHeight = useTransform(scrollYProgress, [0, 1], ['0%', '100%']);
+
+  return (
+    <div ref={containerRef} className="relative mt-16">
+      {/* Animated vertical connector line (SVG) */}
+      <div className="absolute left-[19px] top-0 hidden h-full w-px md:block">
+        {/* Track (faint) */}
+        <div className="absolute inset-0 bg-zinc-800/30" />
+        {/* Fill (scroll-driven) */}
+        <motion.div
+          className="absolute left-0 top-0 w-full bg-gradient-to-b from-emerald-500/50 to-emerald-500/20"
+          style={{ height: lineHeight }}
+        />
+      </div>
+
+      <div className="space-y-12">
+        {HOW_STEPS.map((step, i) => {
+          const Icon = step.icon;
+          return (
+            <motion.div
+              key={step.title}
+              className="relative flex gap-6"
+              initial={{ opacity: 0, x: -16 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true, amount: 0.5 }}
+              transition={{
+                duration: 0.5,
+                ease: 'easeOut',
+                delay: i * 0.08,
+              }}
+            >
+              {/* Step marker */}
+              <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800/60 bg-zinc-950">
+                <Icon className="h-4 w-4 text-emerald-400" />
+              </div>
+
+              <div className="pt-1">
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] font-medium uppercase tracking-[2px] text-emerald-400/60">
+                    Step {i + 1}
+                  </span>
+                </div>
+                <h3 className="mt-1 text-lg font-semibold tracking-tight">
+                  {step.title}
+                </h3>
+                <p className="mt-1.5 max-w-lg text-[13px] leading-relaxed text-slate-500">
+                  {step.body}
+                </p>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────
 export default function AetherLanding() {
   const [heroEmail, setHeroEmail] = useState('');
   const [ctaEmail, setCtaEmail] = useState('');
   const [isSubmittingHero, setIsSubmittingHero] = useState(false);
   const [isSubmittingCta, setIsSubmittingCta] = useState(false);
-
-  // Refs for connector line viewport tracking
-  const howSectionRef = useRef<HTMLDivElement>(null);
 
   const handleSubmit = async (
     event: FormEvent,
@@ -236,7 +315,12 @@ export default function AetherLanding() {
           </div>
 
           {/* Right — Mockup card */}
-          <div className="relative w-full max-w-xl">
+          <motion.div
+            initial={{ opacity: 0, y: 32 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, ease: 'easeOut', delay: 0.2 }}
+            className="relative w-full max-w-xl"
+          >
             <div className="rounded-2xl border border-zinc-800/50 bg-zinc-950/60 p-6 shadow-2xl backdrop-blur-sm">
               <div className="mb-4 flex items-center justify-between text-xs text-slate-500">
                 <span>Executive overview</span>
@@ -286,7 +370,7 @@ export default function AetherLanding() {
                 <span className="text-emerald-400">&rdquo;</span>
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -305,7 +389,13 @@ export default function AetherLanding() {
             <span className="text-slate-500">Your answers are nowhere.</span>
           </h2>
 
-          <div className="mt-14 grid gap-6 md:grid-cols-3">
+          <motion.div
+            className="mt-14 grid gap-6 md:grid-cols-3"
+            variants={STAGGER_CONTAINER}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.3 }}
+          >
             {[
               {
                 title: 'Fragmented data',
@@ -320,10 +410,11 @@ export default function AetherLanding() {
                 body: 'Every manager has a different number. There\u2019s no system that normalizes, explains, and recommends.',
               },
             ].map((card, i) => (
-              <div
+              <motion.div
                 key={card.title}
+                variants={FADE_UP}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
                 className="group rounded-2xl border border-zinc-800/40 bg-zinc-950/40 px-6 py-6 transition-colors hover:border-zinc-700/60"
-                style={{ animationDelay: `${i * 100}ms` }}
               >
                 <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800/60 text-sm font-semibold text-slate-500">
                   {i + 1}
@@ -334,16 +425,15 @@ export default function AetherLanding() {
                 <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
                   {card.body}
                 </p>
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </div>
       </section>
 
       {/* ── 3. How It Works ────────────────────────────────────── */}
       <section
         id="how"
-        ref={howSectionRef}
         className="relative border-t border-zinc-800/40 py-32"
       >
         <div className="mx-auto max-w-5xl px-8">
@@ -359,38 +449,7 @@ export default function AetherLanding() {
             on today.
           </p>
 
-          <div className="relative mt-16">
-            {/* Vertical connector line */}
-            <div className="absolute left-[19px] top-0 hidden h-full w-px bg-gradient-to-b from-emerald-500/40 via-emerald-500/20 to-transparent md:block" />
-
-            <div className="space-y-12">
-              {HOW_STEPS.map((step, i) => {
-                const Icon = step.icon;
-                return (
-                  <div key={step.title} className="relative flex gap-6">
-                    {/* Step marker */}
-                    <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800/60 bg-zinc-950">
-                      <Icon className="h-4 w-4 text-emerald-400" />
-                    </div>
-
-                    <div className="pt-1">
-                      <div className="flex items-center gap-3">
-                        <span className="text-[11px] font-medium uppercase tracking-[2px] text-emerald-400/60">
-                          Step {i + 1}
-                        </span>
-                      </div>
-                      <h3 className="mt-1 text-lg font-semibold tracking-tight">
-                        {step.title}
-                      </h3>
-                      <p className="mt-1.5 max-w-lg text-[13px] leading-relaxed text-slate-500">
-                        {step.body}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <HowItWorksSteps />
         </div>
       </section>
 
@@ -410,12 +469,20 @@ export default function AetherLanding() {
             Each module is opinionated and battle-tested with real operators.
           </p>
 
-          <div className="mt-14 grid gap-6 md:grid-cols-3">
+          <motion.div
+            className="mt-14 grid gap-6 md:grid-cols-3"
+            variants={STAGGER_CONTAINER}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+          >
             {MODULES.map((mod) => {
               const Icon = mod.icon;
               return (
-                <div
+                <motion.div
                   key={mod.title}
+                  variants={FADE_UP}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
                   className="group rounded-2xl border border-zinc-800/40 bg-zinc-950/40 p-6 transition-colors hover:border-zinc-700/60"
                 >
                   <div className="mb-3 flex items-center gap-2 text-xs text-emerald-400">
@@ -480,10 +547,10 @@ export default function AetherLanding() {
                       ))}
                     </div>
                   )}
-                </div>
+                </motion.div>
               );
             })}
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -506,12 +573,20 @@ export default function AetherLanding() {
             </p>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-3">
+          <motion.div
+            className="grid gap-6 md:grid-cols-3"
+            variants={STAGGER_CONTAINER}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+          >
             {(['starter', 'growth', 'enterprise'] as Plan[]).map((plan) => {
               const isPopular = plan === 'growth';
               return (
-                <div
+                <motion.div
                   key={plan}
+                  variants={FADE_UP}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
                   className={`flex flex-col rounded-2xl border px-6 py-6 text-sm transition-colors ${
                     isPopular
                       ? 'border-emerald-500/20 bg-gradient-to-b from-emerald-500/[0.03] to-zinc-950/60 shadow-[0_0_40px_rgba(16,185,129,0.04)]'
@@ -560,10 +635,10 @@ export default function AetherLanding() {
                   >
                     Request access
                   </button>
-                </div>
+                </motion.div>
               );
             })}
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -583,7 +658,13 @@ export default function AetherLanding() {
 
       {/* ── Final CTA ──────────────────────────────────────────── */}
       <section className="border-t border-zinc-800/40 py-24">
-        <div className="mx-auto max-w-3xl px-8 text-center">
+        <motion.div
+          className="mx-auto max-w-3xl px-8 text-center"
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.5 }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+        >
           <h2 className="text-2xl font-semibold tracking-tighter md:text-3xl">
             Ready for an AI COO that actually understands your business?
           </h2>
@@ -619,7 +700,7 @@ export default function AetherLanding() {
               {isSubmittingCta ? 'Joining\u2026' : 'Request early access'}
             </button>
           </form>
-        </div>
+        </motion.div>
       </section>
 
       {/* ── Footer ─────────────────────────────────────────────── */}
