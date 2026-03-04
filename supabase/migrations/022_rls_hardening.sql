@@ -27,13 +27,22 @@ CREATE POLICY ai_messages_delete_org ON public.ai_messages
   FOR DELETE USING (org_id = public.get_user_org_id());
 
 -- ============================================================
--- 2. Missing UPDATE policy for connected_sheets
+-- 2. Missing UPDATE policy for connected_sheets (if table exists)
 -- ============================================================
 
-CREATE POLICY connected_sheets_org_update ON public.connected_sheets
-  FOR UPDATE
-  USING (org_id = public.get_user_org_id())
-  WITH CHECK (org_id = public.get_user_org_id());
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'connected_sheets'
+  ) THEN
+    EXECUTE 'CREATE POLICY connected_sheets_org_update ON public.connected_sheets
+      FOR UPDATE
+      USING (org_id = public.get_user_org_id())
+      WITH CHECK (org_id = public.get_user_org_id())';
+  END IF;
+END;
+$$;
 
 -- ============================================================
 -- 3. industry_benchmarks table (referenced in code, never created)
@@ -63,14 +72,21 @@ CREATE POLICY industry_benchmarks_select_authenticated
 -- The cron job uses the service-role client which bypasses RLS.
 
 -- ============================================================
--- 4. Protect waitlist table
+-- 4. Protect waitlist table (if it exists)
 -- ============================================================
 
-ALTER TABLE public.waitlist ENABLE ROW LEVEL SECURITY;
-
--- Allow unauthenticated inserts (public signup form).
-CREATE POLICY waitlist_insert_public ON public.waitlist
-  FOR INSERT WITH CHECK (true);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'waitlist'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.waitlist ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'CREATE POLICY waitlist_insert_public ON public.waitlist
+      FOR INSERT WITH CHECK (true)';
+  END IF;
+END;
+$$;
 
 -- No SELECT/UPDATE/DELETE policies → deny by default for anon key.
 -- Only the service-role client can read or manage waitlist entries.
