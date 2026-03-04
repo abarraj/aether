@@ -931,39 +931,122 @@ export default function DataModelPage() {
                     width={width}
                     height={height}
                   >
-                    {relationshipTypes.map((rel) => {
-                      const fromPos = positions[rel.from_type_id];
-                      const toPos = positions[rel.to_type_id];
-                      if (!fromPos || !toPos) return null;
-                      const x1 = fromPos.x;
-                      const y1 = fromPos.y;
-                      const x2 = toPos.x;
-                      const y2 = toPos.y;
-                      const midX = (x1 + x2) / 2;
-                      const midY = (y1 + y2) / 2;
-                      return (
-                        <g key={rel.id}>
-                          <line
-                            x1={x1}
-                            y1={y1}
-                            x2={x2}
-                            y2={y2}
-                            stroke={GRAPH.edgeDefault}
-                            strokeWidth={1}
-                          />
-                          <text
-                            x={midX}
-                            y={midY}
-                            textAnchor="middle"
-                            dominantBaseline="middle"
-                            fill={GRAPH.edgeLabel}
-                            style={{ fontSize: 10, fontWeight: 500 }}
-                          >
-                            {rel.name}
-                          </text>
-                        </g>
-                      );
-                    })}
+                    {/* Arrow marker definition */}
+                    <defs>
+                      <marker
+                        id="graph-arrow"
+                        viewBox="0 0 6 4"
+                        refX="5"
+                        refY="2"
+                        markerWidth="6"
+                        markerHeight="4"
+                        orient="auto"
+                      >
+                        <path d="M0,0 L6,2 L0,4 Z" fill={GRAPH.edgeDefault} />
+                      </marker>
+                      <marker
+                        id="graph-arrow-active"
+                        viewBox="0 0 6 4"
+                        refX="5"
+                        refY="2"
+                        markerWidth="6"
+                        markerHeight="4"
+                        orient="auto"
+                      >
+                        <path d="M0,0 L6,2 L0,4 Z" fill={GRAPH.edgeActive} />
+                      </marker>
+                    </defs>
+                    {(() => {
+                      // Count how many relationship types share the same node pair
+                      const pairCounts = new Map<string, number>();
+                      const pairIndex = new Map<string, number>();
+                      for (const rel of relationshipTypes) {
+                        const key = [rel.from_type_id, rel.to_type_id].sort().join(':');
+                        pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1);
+                      }
+
+                      return relationshipTypes.map((rel) => {
+                        const fromPos = positions[rel.from_type_id];
+                        const toPos = positions[rel.to_type_id];
+                        if (!fromPos || !toPos) return null;
+
+                        // Count actual entity relationships for this relationship type
+                        const relEntityCount = relationships.filter(
+                          (r) => r.relationship_type_id === rel.id,
+                        ).length;
+
+                        // Encode strength
+                        const strokeWidth = relEntityCount >= 21 ? 2.5 : relEntityCount >= 6 ? 1.5 : 1;
+                        const strokeOpacity = Math.min(0.7, 0.25 + (relEntityCount / 30) * 0.45);
+
+                        // Handle parallel edges — offset with Bézier curve
+                        const pairKey = [rel.from_type_id, rel.to_type_id].sort().join(':');
+                        const totalForPair = pairCounts.get(pairKey) ?? 1;
+                        const currentIdx = pairIndex.get(pairKey) ?? 0;
+                        pairIndex.set(pairKey, currentIdx + 1);
+
+                        const x1 = fromPos.x;
+                        const y1 = fromPos.y;
+                        const x2 = toPos.x;
+                        const y2 = toPos.y;
+
+                        // Compute perpendicular offset for parallel edges
+                        const dx = x2 - x1;
+                        const dy = y2 - y1;
+                        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const nx = -dy / len; // perpendicular unit vector
+                        const ny = dx / len;
+                        const offsetAmount = totalForPair > 1
+                          ? (currentIdx - (totalForPair - 1) / 2) * 28
+                          : 0;
+
+                        const cx = (x1 + x2) / 2 + nx * offsetAmount;
+                        const cy = (y1 + y2) / 2 + ny * offsetAmount;
+
+                        // Label position (on the curve midpoint)
+                        const labelX = cx;
+                        const labelY = cy;
+
+                        const useCurve = totalForPair > 1;
+                        const pathD = useCurve
+                          ? `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`
+                          : `M ${x1} ${y1} L ${x2} ${y2}`;
+
+                        return (
+                          <g key={rel.id}>
+                            <path
+                              d={pathD}
+                              fill="none"
+                              stroke={GRAPH.edgeDefault}
+                              strokeWidth={strokeWidth}
+                              strokeOpacity={strokeOpacity}
+                              markerEnd="url(#graph-arrow)"
+                            />
+                            {/* Label background pill */}
+                            <rect
+                              x={labelX - (rel.name.length * 3.2 + 16)}
+                              y={labelY - 8}
+                              width={rel.name.length * 6.4 + 32}
+                              height={16}
+                              rx={4}
+                              fill={GRAPH.edgeLabelBg}
+                              stroke={GRAPH.nodeBorder}
+                              strokeWidth={0.5}
+                            />
+                            <text
+                              x={labelX}
+                              y={labelY}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fill={GRAPH.edgeLabel}
+                              style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.01em' }}
+                            >
+                              {rel.name}{relEntityCount > 0 ? ` (${relEntityCount})` : ''}
+                            </text>
+                          </g>
+                        );
+                      });
+                    })()}
                   </svg>
                   <div className="absolute left-0 top-0" style={{ width, height }}>
                   {entityTypes.map((et) => {
