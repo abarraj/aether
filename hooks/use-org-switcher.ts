@@ -27,57 +27,21 @@ export function useOrgSwitcher(org: Organization | null, isUserLoading: boolean)
   const [viewMode, setViewMode] = useState<ViewMode>('portfolio');
   const [isLoading, setIsLoading] = useState(true);
 
-  const isGroup = org?.org_type === 'group';
+  // Multi-org (group/child) columns don't exist in the schema yet.
+  // For now every org is treated as standalone. When org_type and
+  // parent_org_id columns are added, flip this to:
+  //   const isGroup = org?.org_type === 'group';
+  const isGroup = false;
 
   useEffect(() => {
     if (!org || isUserLoading) return;
 
-    if (!isGroup) {
-      setActiveOrg(org);
-      setViewMode('single');
-      setChildOrgs([]);
-      setIsLoading(false);
-      return;
-    }
-
-    const fetchChildren = async () => {
-      setIsLoading(true);
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('organizations')
-        .select(
-          'id, name, slug, industry, timezone, currency, logo_url, plan, org_type, parent_org_id',
-        )
-        .eq('parent_org_id', org.id)
-        .order('name');
-
-      const children = (data ?? []) as Organization[];
-      setChildOrgs(children);
-
-      const savedOrgId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-      const savedMode = (typeof window !== 'undefined'
-        ? localStorage.getItem(VIEW_MODE_KEY)
-        : null) as ViewMode | null;
-
-      if (savedMode === 'single' && savedOrgId) {
-        const found = children.find((c) => c.id === savedOrgId);
-        if (found) {
-          setActiveOrg(found);
-          setViewMode('single');
-        } else {
-          setActiveOrg(org);
-          setViewMode('portfolio');
-        }
-      } else {
-        setActiveOrg(org);
-        setViewMode('portfolio');
-      }
-
-      setIsLoading(false);
-    };
-
-    void fetchChildren();
-  }, [org?.id, isUserLoading, isGroup]);
+    // Until the multi-org schema is created, every org is standalone.
+    setActiveOrg(org);
+    setViewMode('single');
+    setChildOrgs([]);
+    setIsLoading(false);
+  }, [org?.id, isUserLoading]);
 
   const switchToOrg = useCallback(
     (orgId: string) => {

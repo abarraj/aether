@@ -19,7 +19,7 @@ import {
 import { Sidebar } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
 import { cn } from '@/lib/utils';
-import { useUser } from '@/hooks/use-user';
+import { useUser, clearUserCache } from '@/hooks/use-user';
 import { useOrg } from '@/hooks/use-org';
 import { createClient } from '@/lib/supabase/client';
 import { useRealtimeTable } from '@/hooks/use-realtime';
@@ -102,6 +102,7 @@ export default function DashboardShell({ children }: DashboardLayoutProps) {
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
+      clearUserCache();
       await supabase.auth.signOut();
       router.push('/login');
     } finally {

@@ -24,8 +24,6 @@ export interface Organization {
   currency: string;
   logo_url: string | null;
   plan: string;
-   org_type: string;
-   parent_org_id: string | null;
 }
 
 interface UserState {
@@ -35,8 +33,44 @@ interface UserState {
   loaded: boolean;
 }
 
+const EMPTY_STATE: UserState = {
+  user: null,
+  profile: null,
+  org: null,
+  loaded: false,
+};
+
 let cachedState: UserState | null = null;
 let inFlightPromise: Promise<UserState> | null = null;
+let authListenerSubscribed = false;
+
+/** Clear the module-level cache so the next useUser() call refetches. */
+export function clearUserCache(): void {
+  cachedState = null;
+  inFlightPromise = null;
+}
+
+// Subscribe once to auth state changes so we can invalidate the cache
+// when the user signs out or a different user signs in.
+function ensureAuthListener(): void {
+  if (authListenerSubscribed) return;
+  authListenerSubscribed = true;
+
+  const supabase = createClient();
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT') {
+      clearUserCache();
+    } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      // A different user may have signed in — invalidate so we refetch.
+      const currentUserId = cachedState?.user?.id;
+      supabase.auth.getUser().then(({ data }) => {
+        if (data.user?.id !== currentUserId) {
+          clearUserCache();
+        }
+      });
+    }
+  });
+}
 
 async function loadUserState(): Promise<UserState> {
   const supabase = createClient();
@@ -46,12 +80,7 @@ async function loadUserState(): Promise<UserState> {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    const anonymousState: UserState = {
-      user: null,
-      profile: null,
-      org: null,
-      loaded: true,
-    };
+    const anonymousState: UserState = { ...EMPTY_STATE, loaded: true };
     cachedState = anonymousState;
     return anonymousState;
   }
@@ -67,7 +96,7 @@ async function loadUserState(): Promise<UserState> {
   if (profile?.org_id) {
     const { data: organization } = await supabase
       .from('organizations')
-      .select('id, name, slug, industry, timezone, currency, logo_url, plan, org_type, parent_org_id')
+      .select('id, name, slug, industry, timezone, currency, logo_url, plan')
       .eq('id', profile.org_id)
       .maybeSingle<Organization>();
 
@@ -92,19 +121,17 @@ export function useUser(): {
   isLoading: boolean;
 } {
   const [state, setState] = useState<UserState>(
-    () =>
-      cachedState ?? {
-        user: null,
-        profile: null,
-        org: null,
-        loaded: false,
-      },
+    () => cachedState ?? { ...EMPTY_STATE },
   );
 
   useEffect(() => {
+    ensureAuthListener();
+
     let cancelled = false;
 
     if (cachedState && cachedState.loaded) {
+      // Cache may have been populated by another component — sync local state.
+      setState(cachedState);
       return;
     }
 
@@ -122,12 +149,7 @@ export function useUser(): {
       })
       .catch(() => {
         if (!cancelled) {
-          setState({
-            user: null,
-            profile: null,
-            org: null,
-            loaded: true,
-          });
+          setState({ ...EMPTY_STATE, loaded: true });
         }
       });
 
@@ -143,4 +165,3 @@ export function useUser(): {
     isLoading: !state.loaded,
   };
 }
-
