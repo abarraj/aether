@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 
 import { getOrgContext } from '@/lib/auth/org-context';
 import { parseCsv } from '@/lib/csv-parser';
-import { canAddDataSource } from '@/lib/billing/queries';
+import { canAddDataSource, canUploadStorage, canIngestRows, canAddStream } from '@/lib/billing/queries';
 import { logAuditEvent } from '@/lib/audit';
 import { extractEntities, type OntologyMapping } from '@/lib/data/ontology-extractor';
 import { processUploadData } from '@/lib/data/processor';
@@ -96,6 +96,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── Check aggregate storage limit ────────────────────────────────
+    const fileMb = Math.ceil(file.size / (1024 * 1024));
+    const storageOk = await canUploadStorage(ctx.orgId, fileMb);
+    if (!storageOk) {
+      return NextResponse.json(
+        {
+          error: 'Storage limit reached for your current plan.',
+          upgrade: true,
+        },
+        { status: 402 },
+      );
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const fileChecksum = createHash('sha256').update(buffer).digest('hex');
@@ -115,6 +128,18 @@ export async function POST(request: NextRequest) {
     if (existingStream) {
       streamId = existingStream.id;
     } else {
+      // ── Check active stream limit before creating a new one ───────
+      const streamOk = await canAddStream(ctx.orgId);
+      if (!streamOk) {
+        return NextResponse.json(
+          {
+            error: 'Active data stream limit reached for your current plan.',
+            upgrade: true,
+          },
+          { status: 402 },
+        );
+      }
+
       const { data: newStream } = await ctx.supabase
         .from('data_streams')
         .insert({
@@ -213,6 +238,31 @@ export async function POST(request: NextRequest) {
     const text = buffer.toString('utf-8');
     const { rows } = parseCsv(text);
     const rowCount = rows.length;
+
+    // ── Check rows-per-month limit ─────────────────────────────────
+    if (rowCount > 0) {
+      const rowsOk = await canIngestRows(ctx.orgId, rowCount);
+      if (!rowsOk) {
+        // Clean up: mark upload as error since we already created the record
+        await ctx.supabase
+          .from('uploads')
+          .update({ status: 'error', error_message: 'Monthly row ingestion limit reached.' })
+          .eq('id', uploadRecord.id);
+        if (streamVersionId) {
+          await ctx.supabase
+            .from('stream_versions')
+            .update({ status: 'rejected', error_message: 'Monthly row ingestion limit reached.' })
+            .eq('id', streamVersionId);
+        }
+        return NextResponse.json(
+          {
+            error: 'Monthly row ingestion limit reached for your current plan.',
+            upgrade: true,
+          },
+          { status: 402 },
+        );
+      }
+    }
 
     if (rowCount > 0) {
       const mapping = columnMapping as Record<string, string>;
