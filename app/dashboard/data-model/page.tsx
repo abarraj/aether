@@ -189,28 +189,114 @@ const GRAPH = {
   bgTintOpacity: 0.08,
 } as const;
 
-// ----- Graph layout: circular positions for entity types
-function useGraphLayout(entityTypes: EntityType[]) {
-  const NODE_WIDTH = 200;
-  const NODE_HEIGHT = 72;
-  const PADDING = 80;
-  const RADIUS = 220;
+// ── Node size tiers based on entity count ───────────────────────────
+interface NodeSize { w: number; h: number; tier: 'lg' | 'md' | 'sm' }
+
+function getNodeSize(count: number, maxCount: number): NodeSize {
+  if (maxCount === 0) return { w: 200, h: 90, tier: 'md' };
+  const ratio = count / maxCount;
+  if (ratio >= 0.5) return { w: 240, h: 110, tier: 'lg' };
+  if (ratio >= 0.2) return { w: 200, h: 90, tier: 'md' };
+  return { w: 170, h: 74, tier: 'sm' };
+}
+
+// ── Aggregate micro-metrics for an entity type ──────────────────────
+interface MicroMetrics {
+  items: { label: string; value: string }[];
+}
+
+function computeMicroMetrics(
+  entityType: EntityType,
+  typeEntities: Entity[],
+): MicroMetrics {
+  if (typeEntities.length === 0) return { items: [] };
+
+  const numericProps = entityType.properties.filter(
+    (p) => p.type === 'currency' || p.type === 'number' || p.type === 'percentage',
+  );
+
+  const items: { label: string; value: string; raw: number }[] = [];
+  for (const prop of numericProps) {
+    const values = typeEntities
+      .map((e) => {
+        const v = (e.properties as Record<string, unknown>)?.[prop.key];
+        return typeof v === 'number' ? v : Number(v);
+      })
+      .filter((v) => !Number.isNaN(v));
+
+    if (values.length === 0) continue;
+
+    if (prop.type === 'percentage') {
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      items.push({ label: prop.label, value: `${avg.toFixed(0)}%`, raw: avg });
+    } else if (prop.type === 'currency') {
+      const total = values.reduce((a, b) => a + b, 0);
+      const formatted = total >= 1000
+        ? `$${(total / 1000).toFixed(0)}k`
+        : `$${total.toFixed(0)}`;
+      items.push({ label: prop.label, value: formatted, raw: total });
+    } else {
+      const total = values.reduce((a, b) => a + b, 0);
+      const formatted = total >= 1000
+        ? `${(total / 1000).toFixed(1)}k`
+        : `${total.toFixed(0)}`;
+      items.push({ label: prop.label, value: formatted, raw: total });
+    }
+  }
+
+  // Sort by absolute raw value descending, take top 2
+  items.sort((a, b) => Math.abs(b.raw) - Math.abs(a.raw));
+  return { items: items.slice(0, 2).map(({ label, value }) => ({ label, value })) };
+}
+
+// ── Graph layout: hierarchical circular positions ───────────────────
+function useGraphLayout(
+  entityTypes: EntityType[],
+  entities: Entity[],
+  relationshipCountByType: Record<string, number>,
+) {
+  const PADDING = 100;
+  const BASE_RADIUS = 260;
 
   return useMemo(() => {
     const n = entityTypes.length;
     const positions: Record<string, { x: number; y: number }> = {};
-    if (n === 0) return { positions, width: 600, height: 400 };
+    const nodeSizes: Record<string, NodeSize> = {};
+
+    if (n === 0) return { positions, nodeSizes, width: 600, height: 400 };
+
+    // Compute entity counts per type + max
+    const counts: Record<string, number> = {};
+    let maxCount = 0;
+    for (const et of entityTypes) {
+      const c = entities.filter((e) => e.entity_type_id === et.id).length;
+      counts[et.id] = c;
+      if (c > maxCount) maxCount = c;
+    }
+
+    // Compute sizes
+    for (const et of entityTypes) {
+      nodeSizes[et.id] = getNodeSize(counts[et.id], maxCount);
+    }
+
+    // Place in circle, but pull more-connected nodes inward
+    const maxRels = Math.max(1, ...Object.values(relationshipCountByType));
     entityTypes.forEach((et, i) => {
       const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+      const relCount = relationshipCountByType[et.id] ?? 0;
+      // More connections → closer to center (up to 30% inward)
+      const pullFactor = 1 - (relCount / maxRels) * 0.3;
+      const r = BASE_RADIUS * pullFactor;
       positions[et.id] = {
-        x: PADDING + RADIUS + RADIUS * Math.cos(angle),
-        y: PADDING + RADIUS + RADIUS * Math.sin(angle),
+        x: PADDING + BASE_RADIUS + r * Math.cos(angle),
+        y: PADDING + BASE_RADIUS + r * Math.sin(angle),
       };
     });
-    const width = PADDING * 2 + RADIUS * 2;
-    const height = PADDING * 2 + RADIUS * 2;
-    return { positions, width, height, nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT };
-  }, [entityTypes]);
+
+    const width = PADDING * 2 + BASE_RADIUS * 2;
+    const height = PADDING * 2 + BASE_RADIUS * 2;
+    return { positions, nodeSizes, width, height };
+  }, [entityTypes, entities, relationshipCountByType]);
 }
 
 export default function DataModelPage() {
@@ -264,8 +350,6 @@ export default function DataModelPage() {
   const entitiesForType = selectedType
     ? entities.filter((e) => e.entity_type_id === selectedType.id)
     : [];
-  const { positions, width, height, nodeWidth, nodeHeight } = useGraphLayout(entityTypes);
-
   const relationshipCountByType = useMemo(() => {
     const map: Record<string, number> = {};
     entityTypes.forEach((et) => {
@@ -275,6 +359,8 @@ export default function DataModelPage() {
     });
     return map;
   }, [entityTypes, relationshipTypes]);
+
+  const { positions, nodeSizes, width, height } = useGraphLayout(entityTypes, entities, relationshipCountByType);
 
   const selectedEntity = selectedEntityId
     ? entities.find((e) => e.id === selectedEntityId) ?? null
@@ -884,8 +970,14 @@ export default function DataModelPage() {
                     const pos = positions[et.id];
                     if (!pos) return null;
                     const IconComponent = ICON_MAP[et.icon.toLowerCase()] ?? Circle;
-                    const count = entities.filter((e) => e.entity_type_id === et.id).length;
+                    const typeEntities = entities.filter((e) => e.entity_type_id === et.id);
+                    const count = typeEntities.length;
                     const isSelected = selectedTypeId === et.id;
+                    const size = nodeSizes[et.id] ?? { w: 200, h: 90, tier: 'md' };
+                    const micro = computeMicroMetrics(et, typeEntities);
+                    const relCount = relationshipCountByType[et.id] ?? 0;
+                    const maxEntityCount = Math.max(1, ...entityTypes.map((t) => entities.filter((e) => e.entity_type_id === t.id).length));
+                    const barPct = Math.round((count / maxEntityCount) * 100);
                     return (
                       <button
                         key={et.id}
@@ -893,22 +985,53 @@ export default function DataModelPage() {
                         onClick={() => setSelectedTypeId(et.id)}
                         className="absolute rounded-xl border shadow-md transition-all duration-150 hover:shadow-lg hover:brightness-110 focus:outline-none"
                         style={{
-                          left: pos.x - (nodeWidth ?? 200) / 2,
-                          top: pos.y - (nodeHeight ?? 72) / 2,
-                          width: nodeWidth,
-                          height: nodeHeight,
+                          left: pos.x - size.w / 2,
+                          top: pos.y - size.h / 2,
+                          width: size.w,
+                          height: size.h,
                           borderColor: isSelected ? GRAPH.nodeSelectedBorder : GRAPH.nodeBorder,
                           backgroundColor: GRAPH.nodeBg,
                           borderLeftWidth: '3px',
                           borderLeftColor: `color-mix(in srgb, ${et.color} ${Math.round(GRAPH.accentOpacity * 100)}%, transparent)`,
                         }}
                       >
-                        <div className="flex items-center gap-2 px-3 py-2">
-                          <IconComponent className="h-4 w-4 shrink-0" style={{ color: et.color }} />
-                          <span className="truncate text-sm font-medium" style={{ color: GRAPH.nodeTextPrimary }}>{et.name}</span>
-                          <span className="ml-auto rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono" style={{ color: GRAPH.nodeTextSecondary }}>
-                            {count}
-                          </span>
+                        <div className="flex flex-col gap-1 px-3 py-2 h-full justify-center">
+                          {/* Row 1: icon + name + count */}
+                          <div className="flex items-center gap-2">
+                            <IconComponent className="h-3.5 w-3.5 shrink-0" style={{ color: et.color }} />
+                            <span className="truncate text-xs font-semibold leading-tight" style={{ color: GRAPH.nodeTextPrimary }}>{et.name}</span>
+                            <span className="ml-auto rounded bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-mono tabular-nums" style={{ color: GRAPH.nodeTextSecondary }}>
+                              {count}
+                            </span>
+                          </div>
+                          {/* Row 2: micro-metrics */}
+                          {micro.items.length > 0 && (
+                            <div className="flex items-center gap-2 pl-5.5">
+                              {micro.items.map((m, mi) => (
+                                <span key={mi} className="text-[10px] tabular-nums" style={{ color: GRAPH.nodeTextMetric }}>
+                                  {m.value} <span style={{ color: GRAPH.nodeTextSecondary }}>{m.label.toLowerCase()}</span>
+                                  {mi < micro.items.length - 1 && <span className="mx-0.5" style={{ color: GRAPH.nodeBorder }}>·</span>}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {/* Row 3: mini bar + connections */}
+                          <div className="flex items-center gap-2 pl-5.5">
+                            <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${barPct}%`,
+                                  backgroundColor: `color-mix(in srgb, ${et.color} 40%, transparent)`,
+                                }}
+                              />
+                            </div>
+                            {relCount > 0 && (
+                              <span className="text-[9px] tabular-nums whitespace-nowrap" style={{ color: GRAPH.nodeTextSecondary }}>
+                                {relCount} conn
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </button>
                     );
