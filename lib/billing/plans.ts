@@ -18,6 +18,9 @@ export const PLANS: Record<
       users: 2,
       storageMb: 50,
       aiTier: 'basic',
+      aiCreditsPerMonth: 100,
+      maxRowsPerMonth: 10_000,
+      maxActiveStreams: 3,
     },
   },
   growth: {
@@ -28,6 +31,9 @@ export const PLANS: Record<
       users: 25,
       storageMb: 5000,
       aiTier: 'full',
+      aiCreditsPerMonth: 1_000,
+      maxRowsPerMonth: 500_000,
+      maxActiveStreams: 25,
     },
   },
   enterprise: {
@@ -38,6 +44,9 @@ export const PLANS: Record<
       users: null,
       storageMb: null,
       aiTier: 'enterprise',
+      aiCreditsPerMonth: null,
+      maxRowsPerMonth: null,
+      maxActiveStreams: null,
     },
   },
 };
