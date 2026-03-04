@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Lock, Mail, Chrome, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -12,7 +12,11 @@ import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  const next = searchParams.get('next');
+  const safeNext = next?.startsWith('/') ? next : null;
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
@@ -25,8 +29,11 @@ export default function LoginPage() {
   const [isMagicLoading, setIsMagicLoading] = useState<boolean>(false);
   const [isOAuthLoading, setIsOAuthLoading] = useState<boolean>(false);
 
-  const redirectTo =
+  const callbackBase =
     typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '/auth/callback';
+  const redirectTo = safeNext
+    ? `${callbackBase}?next=${encodeURIComponent(safeNext)}`
+    : callbackBase;
 
   type ProfileOrg = {
     org_id: string | null;
@@ -91,7 +98,7 @@ export default function LoginPage() {
       }
 
       toast.success('Welcome back.');
-      router.push(hasOrg ? '/dashboard' : '/onboarding');
+      router.push(safeNext ?? (hasOrg ? '/dashboard' : '/onboarding'));
     } catch {
       toast.error('Something went wrong signing in.');
     } finally {
@@ -261,7 +268,9 @@ export default function LoginPage() {
           <button
             type="button"
             className="text-slate-400 underline-offset-4 hover:text-slate-200 hover:underline"
-            onClick={() => router.push('/signup')}
+            onClick={() =>
+              router.push(safeNext ? `/signup?next=${encodeURIComponent(safeNext)}` : '/signup')
+            }
           >
             Create account
           </button>

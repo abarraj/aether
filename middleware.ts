@@ -38,6 +38,14 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && (path === '/login' || path === '/signup')) {
+    const nextParam = request.nextUrl.searchParams.get('next');
+    if (nextParam?.startsWith('/')) {
+      const url = request.nextUrl.clone();
+      url.pathname = nextParam;
+      url.search = '';
+      return NextResponse.redirect(url);
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('org_id')
@@ -71,7 +79,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login', '/signup', '/onboarding'],
+  matcher: ['/dashboard/:path*', '/login', '/signup', '/onboarding', '/invite/:path*'],
 };
 
 

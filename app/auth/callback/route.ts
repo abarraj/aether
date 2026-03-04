@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
+  const next = searchParams.get('next');
 
   if (code) {
     const cookieStore = await cookies();
@@ -16,8 +17,8 @@ export async function GET(request: Request) {
           getAll() {
             return cookieStore.getAll();
           },
-          setAll(cookiesToSet: any) {
-            cookiesToSet.forEach(({ name, value, options }: any) =>
+          setAll(cookiesToSet: { name: string; value: string; options: Record<string, unknown> }[]) {
+            cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options),
             );
           },
@@ -27,10 +28,12 @@ export async function GET(request: Request) {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      if (next && next.startsWith('/')) {
+        return NextResponse.redirect(`${origin}${next}`);
+      }
       return NextResponse.redirect(`${origin}/dashboard`);
     }
   }
 
   return NextResponse.redirect(`${origin}/login?error=auth`);
 }
-
