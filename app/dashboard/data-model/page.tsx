@@ -169,6 +169,26 @@ function slugFromLabel(label: string): string {
     .replace(/^_|_$/g, '') || 'field';
 }
 
+// ── Graph Console Theme Tokens ──────────────────────────────────────
+const GRAPH = {
+  bg: '#090909',
+  gridDot: '#1a1a1a',
+  gridSize: 20,
+  edgeDefault: '#2a2a2e',
+  edgeActive: '#3f3f46',
+  edgeLabel: '#71717a',
+  edgeLabelBg: '#0f0f11',
+  nodeBg: '#0f0f11',
+  nodeBorder: '#1f1f23',
+  nodeSelectedBorder: 'rgba(16,185,129,0.4)',
+  nodeTextPrimary: '#e4e4e7',
+  nodeTextSecondary: '#71717a',
+  nodeTextMetric: '#a1a1aa',
+  // Desaturate entity colors: full for icon, muted for accents
+  accentOpacity: 0.45,
+  bgTintOpacity: 0.08,
+} as const;
+
 // ----- Graph layout: circular positions for entity types
 function useGraphLayout(entityTypes: EntityType[]) {
   const NODE_WIDTH = 200;
@@ -789,13 +809,14 @@ export default function DataModelPage() {
       )}
 
       {activeTab === 'graph' && (
-        <div className="flex gap-0 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0A0A0A] shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+        <div className="flex gap-0 overflow-hidden rounded-2xl border border-zinc-800 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]" style={{ backgroundColor: GRAPH.bg }}>
           <div
             className="relative flex-1 overflow-auto"
             style={{
-              backgroundImage: 'radial-gradient(circle, #1a1a2e 1px, transparent 1px)',
-              backgroundSize: '24px 24px',
+              backgroundImage: `radial-gradient(circle, ${GRAPH.gridDot} 0.75px, transparent 0.75px)`,
+              backgroundSize: `${GRAPH.gridSize}px ${GRAPH.gridSize}px`,
               minHeight: 560,
+              boxShadow: 'inset 0 0 80px 40px rgba(0,0,0,0.35)',
             }}
           >
             {entityTypes.length === 0 ? (
@@ -841,7 +862,7 @@ export default function DataModelPage() {
                             y1={y1}
                             x2={x2}
                             y2={y2}
-                            stroke="#52525b"
+                            stroke={GRAPH.edgeDefault}
                             strokeWidth={1}
                           />
                           <text
@@ -849,7 +870,7 @@ export default function DataModelPage() {
                             y={midY}
                             textAnchor="middle"
                             dominantBaseline="middle"
-                            fill="#94a3b8"
+                            fill={GRAPH.edgeLabel}
                             style={{ fontSize: 10, fontWeight: 500 }}
                           >
                             {rel.name}
@@ -870,22 +891,22 @@ export default function DataModelPage() {
                         key={et.id}
                         type="button"
                         onClick={() => setSelectedTypeId(et.id)}
-                        className="absolute rounded-2xl border bg-zinc-950/95 shadow-lg transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                        className="absolute rounded-xl border shadow-md transition-all duration-150 hover:shadow-lg hover:brightness-110 focus:outline-none"
                         style={{
                           left: pos.x - (nodeWidth ?? 200) / 2,
                           top: pos.y - (nodeHeight ?? 72) / 2,
                           width: nodeWidth,
                           height: nodeHeight,
-                          borderColor: isSelected ? '#10B981' : '#27272a',
-                          backgroundColor: `${et.color}14`,
-                          borderLeftWidth: '4px',
-                          borderLeftColor: et.color,
+                          borderColor: isSelected ? GRAPH.nodeSelectedBorder : GRAPH.nodeBorder,
+                          backgroundColor: GRAPH.nodeBg,
+                          borderLeftWidth: '3px',
+                          borderLeftColor: `color-mix(in srgb, ${et.color} ${Math.round(GRAPH.accentOpacity * 100)}%, transparent)`,
                         }}
                       >
                         <div className="flex items-center gap-2 px-3 py-2">
-                          <IconComponent className="h-5 w-5 shrink-0" style={{ color: et.color }} />
-                          <span className="truncate text-sm font-medium text-slate-100">{et.name}</span>
-                          <span className="ml-auto rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-slate-400">
+                          <IconComponent className="h-4 w-4 shrink-0" style={{ color: et.color }} />
+                          <span className="truncate text-sm font-medium" style={{ color: GRAPH.nodeTextPrimary }}>{et.name}</span>
+                          <span className="ml-auto rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono" style={{ color: GRAPH.nodeTextSecondary }}>
                             {count}
                           </span>
                         </div>
