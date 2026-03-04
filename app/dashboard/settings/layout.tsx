@@ -2,7 +2,7 @@
 
 'use client';
 
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -15,24 +15,43 @@ import {
   Shield,
   Users,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+import { hasPermission, type Permission, type Role } from '@/lib/auth/permissions';
+import { useRole } from '@/hooks/use-permission';
 
 type SettingsLayoutProps = {
   children: ReactNode;
 };
 
-const settingsNavItems = [
-  { label: 'General', href: '/dashboard/settings', icon: Settings },
-  { label: 'Team & Roles', href: '/dashboard/settings/team', icon: Users },
-  { label: 'Billing', href: '/dashboard/settings/billing', icon: CreditCard },
-  { label: 'Connections', href: '/dashboard/settings/integrations', icon: Plug },
-  { label: 'Notifications', href: '/dashboard/settings/notifications', icon: Bell },
-  { label: 'Storage & Data', href: '/dashboard/settings/data-management', icon: Database },
-  { label: 'Activity Log', href: '/dashboard/settings/audit-log', icon: ScrollText },
-  { label: 'Security', href: '/dashboard/settings/security', icon: Shield },
+type NavItem = {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  requiredPermission?: Permission;
+};
+
+const allSettingsNavItems: NavItem[] = [
+  { label: 'General', href: '/dashboard/settings', icon: Settings, requiredPermission: 'manage_settings' },
+  { label: 'Team & Roles', href: '/dashboard/settings/team', icon: Users, requiredPermission: 'manage_team' },
+  { label: 'Billing', href: '/dashboard/settings/billing', icon: CreditCard, requiredPermission: 'manage_billing' },
+  { label: 'Connections', href: '/dashboard/settings/integrations', icon: Plug, requiredPermission: 'manage_integrations' },
+  { label: 'Notifications', href: '/dashboard/settings/notifications', icon: Bell, requiredPermission: 'manage_settings' },
+  { label: 'Storage & Data', href: '/dashboard/settings/data-management', icon: Database, requiredPermission: 'export_data' },
+  { label: 'Activity Log', href: '/dashboard/settings/audit-log', icon: ScrollText, requiredPermission: 'view_audit_log' },
+  { label: 'Security', href: '/dashboard/settings/security', icon: Shield, requiredPermission: 'manage_settings' },
 ];
 
 export default function SettingsLayout({ children }: SettingsLayoutProps) {
   const pathname = usePathname();
+  const role = useRole();
+
+  const settingsNavItems = useMemo(() => {
+    if (!role) return [];
+    return allSettingsNavItems.filter(
+      (item) => !item.requiredPermission || hasPermission(role, item.requiredPermission),
+    );
+  }, [role]);
 
   const isActive = (href: string) =>
     pathname === href || (href !== '/dashboard/settings' && pathname.startsWith(`${href}/`));
@@ -104,4 +123,3 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
     </div>
   );
 }
-
