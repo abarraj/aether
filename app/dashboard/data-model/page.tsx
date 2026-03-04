@@ -51,6 +51,7 @@ import type {
   RelationshipType,
 } from '@/types/domain';
 import { cn } from '@/lib/utils';
+import { useUser } from '@/hooks/use-user';
 import { EntityDetailPanel } from '@/components/data/entity-detail-panel';
 
 function formatPropertyValue(value: unknown, type: PropertyType): string {
@@ -345,6 +346,152 @@ export default function DataModelPage() {
   const previousNameRef = useRef('');
   const previousDescRef = useRef('');
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+
+  // ── Graph interaction state ─────────────────────────────────────────
+  const { org } = useUser();
+  const graphContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Pan + Zoom
+  const [graphScale, setGraphScale] = useState(1);
+  const [graphTranslate, setGraphTranslate] = useState({ x: 0, y: 0 });
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
+
+  // Drag
+  const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const isDragging = useRef<string | null>(null);
+  const dragOffset = useRef({ x: 0, y: 0 });
+
+  // Undo stack for drag positions
+  const undoStack = useRef<Array<Record<string, { x: number; y: number }>>>([]);
+
+  // Load persisted positions
+  useEffect(() => {
+    if (!org) return;
+    try {
+      const stored = localStorage.getItem(`aether_graph_positions_${org.id}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (typeof parsed === 'object' && parsed !== null) {
+          setDragPositions(parsed);
+        }
+      }
+    } catch {
+      // Non-blocking
+    }
+  }, [org]);
+
+  // Persist positions on change (debounced)
+  const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!org || Object.keys(dragPositions).length === 0) return;
+    if (persistTimeout.current) clearTimeout(persistTimeout.current);
+    persistTimeout.current = setTimeout(() => {
+      try {
+        localStorage.setItem(`aether_graph_positions_${org.id}`, JSON.stringify(dragPositions));
+      } catch {
+        // Non-blocking
+      }
+    }, 300);
+    return () => {
+      if (persistTimeout.current) clearTimeout(persistTimeout.current);
+    };
+  }, [dragPositions, org]);
+
+  // Keyboard undo: Ctrl/Cmd+Z
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && activeTab === 'graph') {
+        e.preventDefault();
+        const prev = undoStack.current.pop();
+        if (prev) {
+          setDragPositions(prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeTab]);
+
+  const handleResetLayout = () => {
+    undoStack.current.push({ ...dragPositions });
+    setDragPositions({});
+    setGraphScale(1);
+    setGraphTranslate({ x: 0, y: 0 });
+    if (org) {
+      try {
+        localStorage.removeItem(`aether_graph_positions_${org.id}`);
+      } catch {
+        // Non-blocking
+      }
+    }
+  };
+
+  // Pan handlers
+  const handlePanStart = useCallback((e: React.MouseEvent) => {
+    // Middle-click or Ctrl+left-click starts pan
+    if (e.button === 1 || (e.button === 0 && (e.ctrlKey || e.metaKey))) {
+      e.preventDefault();
+      isPanning.current = true;
+      panStart.current = { x: e.clientX, y: e.clientY, tx: graphTranslate.x, ty: graphTranslate.y };
+    }
+  }, [graphTranslate]);
+
+  const handlePanMove = useCallback((e: React.MouseEvent) => {
+    if (isPanning.current) {
+      const dx = e.clientX - panStart.current.x;
+      const dy = e.clientY - panStart.current.y;
+      setGraphTranslate({ x: panStart.current.tx + dx, y: panStart.current.ty + dy });
+    }
+    if (isDragging.current) {
+      const nodeId = isDragging.current;
+      const rect = graphContainerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const x = (e.clientX - rect.left - graphTranslate.x) / graphScale - dragOffset.current.x;
+        const y = (e.clientY - rect.top - graphTranslate.y) / graphScale - dragOffset.current.y;
+        setDragPositions((prev) => ({ ...prev, [nodeId]: { x, y } }));
+      }
+    }
+  }, [graphScale, graphTranslate]);
+
+  const handlePanEnd = useCallback(() => {
+    isPanning.current = false;
+    if (isDragging.current) {
+      isDragging.current = null;
+    }
+  }, []);
+
+  // Zoom handler
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.001;
+    setGraphScale((prev) => Math.min(2, Math.max(0.4, prev + delta)));
+  }, []);
+
+  // Node drag start
+  const handleNodeDragStart = useCallback((e: React.MouseEvent, nodeId: string, nodePos: { x: number; y: number }) => {
+    if (e.ctrlKey || e.metaKey || e.button !== 0) return; // Don't drag during pan
+    e.stopPropagation();
+    const rect = graphContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mouseX = (e.clientX - rect.left - graphTranslate.x) / graphScale;
+    const mouseY = (e.clientY - rect.top - graphTranslate.y) / graphScale;
+    dragOffset.current = { x: mouseX - nodePos.x, y: mouseY - nodePos.y };
+    undoStack.current.push({ ...dragPositions });
+    if (undoStack.current.length > 20) undoStack.current.shift();
+    isDragging.current = nodeId;
+  }, [graphScale, graphTranslate, dragPositions]);
+
+  // Compute connected node IDs for selection focus
+  const connectedNodeIds = useMemo(() => {
+    if (!selectedTypeId) return null;
+    const ids = new Set<string>([selectedTypeId]);
+    for (const rel of relationshipTypes) {
+      if (rel.from_type_id === selectedTypeId) ids.add(rel.to_type_id);
+      if (rel.to_type_id === selectedTypeId) ids.add(rel.from_type_id);
+    }
+    return ids;
+  }, [selectedTypeId, relationshipTypes]);
 
   const selectedType = selectedTypeId ? (entityTypes.find((et) => et.id === selectedTypeId) || null) : null;
   const entitiesForType = selectedType
@@ -897,14 +1044,53 @@ export default function DataModelPage() {
       {activeTab === 'graph' && (
         <div className="flex gap-0 overflow-hidden rounded-2xl border border-zinc-800 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]" style={{ backgroundColor: GRAPH.bg }}>
           <div
-            className="relative flex-1 overflow-auto"
+            ref={graphContainerRef}
+            className="relative flex-1 overflow-hidden select-none"
             style={{
               backgroundImage: `radial-gradient(circle, ${GRAPH.gridDot} 0.75px, transparent 0.75px)`,
               backgroundSize: `${GRAPH.gridSize}px ${GRAPH.gridSize}px`,
               minHeight: 560,
               boxShadow: 'inset 0 0 80px 40px rgba(0,0,0,0.35)',
+              cursor: isPanning.current ? 'grabbing' : 'default',
             }}
+            onMouseDown={handlePanStart}
+            onMouseMove={handlePanMove}
+            onMouseUp={handlePanEnd}
+            onMouseLeave={handlePanEnd}
+            onWheel={handleWheel}
+            onContextMenu={(e) => e.preventDefault()}
           >
+            {/* Graph controls */}
+            <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setGraphScale((s) => Math.min(2, s + 0.15))}
+                className="rounded-lg border border-zinc-700/50 px-2 py-1 text-[10px] font-mono text-slate-400 hover:bg-zinc-800/50 hover:text-slate-300 transition-colors"
+                style={{ backgroundColor: GRAPH.edgeLabelBg }}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => setGraphScale((s) => Math.max(0.4, s - 0.15))}
+                className="rounded-lg border border-zinc-700/50 px-2 py-1 text-[10px] font-mono text-slate-400 hover:bg-zinc-800/50 hover:text-slate-300 transition-colors"
+                style={{ backgroundColor: GRAPH.edgeLabelBg }}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={handleResetLayout}
+                className="rounded-lg border border-zinc-700/50 px-2.5 py-1 text-[10px] text-slate-500 hover:bg-zinc-800/50 hover:text-slate-300 transition-colors"
+                style={{ backgroundColor: GRAPH.edgeLabelBg }}
+              >
+                Reset
+              </button>
+              <span className="ml-1 text-[9px] font-mono tabular-nums text-slate-600">
+                {Math.round(graphScale * 100)}%
+              </span>
+            </div>
+
             {entityTypes.length === 0 ? (
               <div className="flex h-[520px] flex-col items-center justify-center gap-4 px-8 text-center">
                 <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-8 max-w-md">
@@ -923,8 +1109,13 @@ export default function DataModelPage() {
             ) : (
               <>
                 <div
-                  className="relative shrink-0"
-                  style={{ width, height, minHeight: height }}
+                  className="relative shrink-0 origin-top-left transition-transform duration-75"
+                  style={{
+                    width,
+                    height,
+                    minHeight: height,
+                    transform: `translate(${graphTranslate.x}px, ${graphTranslate.y}px) scale(${graphScale})`,
+                  }}
                 >
                   <svg
                     className="absolute left-0 top-0 pointer-events-none"
@@ -966,9 +1157,13 @@ export default function DataModelPage() {
                       }
 
                       return relationshipTypes.map((rel) => {
-                        const fromPos = positions[rel.from_type_id];
-                        const toPos = positions[rel.to_type_id];
+                        const fromPos = dragPositions[rel.from_type_id] ?? positions[rel.from_type_id];
+                        const toPos = dragPositions[rel.to_type_id] ?? positions[rel.to_type_id];
                         if (!fromPos || !toPos) return null;
+
+                        // Selection focus: fade edges not connected to selected node
+                        const isEdgeConnected = !connectedNodeIds || (connectedNodeIds.has(rel.from_type_id) && connectedNodeIds.has(rel.to_type_id));
+                        const edgeFocusOpacity = connectedNodeIds ? (isEdgeConnected ? 1 : 0.12) : 1;
 
                         // Count actual entity relationships for this relationship type
                         const relEntityCount = relationships.filter(
@@ -1013,7 +1208,7 @@ export default function DataModelPage() {
                           : `M ${x1} ${y1} L ${x2} ${y2}`;
 
                         return (
-                          <g key={rel.id}>
+                          <g key={rel.id} style={{ opacity: edgeFocusOpacity, transition: 'opacity 200ms ease' }}>
                             <path
                               d={pathD}
                               fill="none"
@@ -1050,8 +1245,9 @@ export default function DataModelPage() {
                   </svg>
                   <div className="absolute left-0 top-0" style={{ width, height }}>
                   {entityTypes.map((et) => {
-                    const pos = positions[et.id];
-                    if (!pos) return null;
+                    const layoutPos = positions[et.id];
+                    if (!layoutPos) return null;
+                    const nodePos = dragPositions[et.id] ?? layoutPos;
                     const IconComponent = ICON_MAP[et.icon.toLowerCase()] ?? Circle;
                     const typeEntities = entities.filter((e) => e.entity_type_id === et.id);
                     const count = typeEntities.length;
@@ -1061,21 +1257,32 @@ export default function DataModelPage() {
                     const relCount = relationshipCountByType[et.id] ?? 0;
                     const maxEntityCount = Math.max(1, ...entityTypes.map((t) => entities.filter((e) => e.entity_type_id === t.id).length));
                     const barPct = Math.round((count / maxEntityCount) * 100);
+
+                    // Selection focus: fade nodes not connected to selected
+                    const isConnected = !connectedNodeIds || connectedNodeIds.has(et.id);
+                    const nodeFocusOpacity = connectedNodeIds ? (isConnected ? 1 : 0.25) : 1;
+
                     return (
                       <button
                         key={et.id}
                         type="button"
-                        onClick={() => setSelectedTypeId(et.id)}
-                        className="absolute rounded-xl border shadow-md transition-all duration-150 hover:shadow-lg hover:brightness-110 focus:outline-none"
+                        onClick={() => {
+                          if (!isDragging.current) setSelectedTypeId(et.id);
+                        }}
+                        onMouseDown={(e) => handleNodeDragStart(e, et.id, nodePos)}
+                        className="absolute rounded-xl border shadow-md focus:outline-none"
                         style={{
-                          left: pos.x - size.w / 2,
-                          top: pos.y - size.h / 2,
+                          left: nodePos.x - size.w / 2,
+                          top: nodePos.y - size.h / 2,
                           width: size.w,
                           height: size.h,
                           borderColor: isSelected ? GRAPH.nodeSelectedBorder : GRAPH.nodeBorder,
                           backgroundColor: GRAPH.nodeBg,
                           borderLeftWidth: '3px',
                           borderLeftColor: `color-mix(in srgb, ${et.color} ${Math.round(GRAPH.accentOpacity * 100)}%, transparent)`,
+                          opacity: nodeFocusOpacity,
+                          transition: 'opacity 200ms ease, border-color 150ms ease',
+                          cursor: isDragging.current === et.id ? 'grabbing' : 'grab',
                         }}
                       >
                         <div className="flex flex-col gap-1 px-3 py-2 h-full justify-center">
