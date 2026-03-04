@@ -1,4 +1,4 @@
-// API route handling CSV uploads with pipeline stages:
+// API route handling CSV and XLSX uploads with pipeline stages:
 // staging → validated → committed. Creates data_stream + stream_version
 // records alongside the legacy upload record for traceability.
 
@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 
 import { getOrgContext } from '@/lib/auth/org-context';
 import { parseCsv } from '@/lib/csv-parser';
+import { parseXlsx } from '@/lib/xlsx-parser';
 import { canAddDataSource, canUploadStorage, canIngestRows, canAddStream } from '@/lib/billing/queries';
 import { logAuditEvent } from '@/lib/audit';
 import { extractEntities, type OntologyMapping } from '@/lib/data/ontology-extractor';
@@ -234,9 +235,19 @@ export async function POST(request: NextRequest) {
     }
 
     // ── STAGE: Validated ────────────────────────────────────────────
-    // Parse CSV and create data_rows
-    const text = buffer.toString('utf-8');
-    const { rows } = parseCsv(text);
+    // Parse CSV or XLSX and create data_rows
+    const isXlsx = /\.xlsx?$/i.test(file.name);
+    let rows: Record<string, unknown>[];
+
+    if (isXlsx) {
+      const xlsxResult = parseXlsx(buffer);
+      rows = xlsxResult.rows;
+    } else {
+      const text = buffer.toString('utf-8');
+      const csvResult = parseCsv(text);
+      rows = csvResult.rows;
+    }
+
     const rowCount = rows.length;
 
     // ── Check rows-per-month limit ─────────────────────────────────
