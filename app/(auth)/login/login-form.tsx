@@ -160,10 +160,10 @@ export default function LoginForm() {
     <div className="bg-[#0A0A0A] text-slate-200">
       <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 px-8 py-10 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] transition-transform duration-200 ease-out hover:scale-[1.005]">
         <div className="mb-8 flex flex-col items-center gap-3">
-          <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-80">
             <div className="h-8 w-8 rounded-xl bg-emerald-500" />
             <span className="text-xl font-semibold tracking-tight">Aether</span>
-          </div>
+          </Link>
           <p className="text-sm text-slate-400">Sign in to your AI COO workspace.</p>
         </div>
 

@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { UploadCloud, Check } from 'lucide-react';
@@ -209,35 +210,51 @@ export default function OnboardingPage() {
         return;
       }
 
-      const { data: org, error: orgError } = await supabase
-        .from('organizations')
-        .insert({
-          name: orgName.trim(),
-          slug,
-          industry,
-          timezone,
-          currency,
-          onboarding_completed: true,
-          org_type: isMultiBrand ? 'group' : 'standalone',
-        })
-        .select('id')
-        .single();
-
-      if (orgError || !org) {
-        toast.error('Unable to create your organization. Please try again.');
-        setIsSubmitting(false);
-        return;
-      }
-
-      const { error: profileError } = await supabase
+      // Idempotency: if the user already has an org (e.g. page was refreshed
+      // after org creation but before profile update completed), reuse it.
+      const { data: existingProfile } = await supabase
         .from('profiles')
-        .update({ org_id: org.id, role: 'owner' })
-        .eq('id', user.id);
+        .select('org_id')
+        .eq('id', user.id)
+        .maybeSingle();
 
-      if (profileError) {
-        toast.error('Organization created but assigning it to your profile failed.');
-        setIsSubmitting(false);
-        return;
+      let orgId: string;
+
+      if (existingProfile?.org_id) {
+        // User already has an org — skip creation.
+        orgId = existingProfile.org_id;
+      } else {
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .insert({
+            name: orgName.trim(),
+            slug,
+            industry,
+            timezone,
+            currency,
+            onboarding_completed: true,
+          })
+          .select('id')
+          .single();
+
+        if (orgError || !org) {
+          toast.error('Unable to create your organization. Please try again.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        orgId = org.id;
+
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ org_id: orgId, role: 'owner' })
+          .eq('id', user.id);
+
+        if (profileError) {
+          toast.error('Organization created but assigning it to your profile failed.');
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       toast.success('Aether is ready. Redirecting to your dashboard.');
@@ -258,10 +275,10 @@ export default function OnboardingPage() {
     <div className="bg-[#0A0A0A] text-slate-200">
       <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 px-8 py-9 shadow-[0_0_0_1px_rgba(24,24,27,0.9)] transition-transform duration-200 ease-out hover:scale-[1.005]">
         <div className="flex flex-col items-center gap-4 mb-6">
-          <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-80">
             <div className="h-8 w-8 rounded-xl bg-emerald-500" />
             <span className="text-xl font-semibold tracking-tight">Aether</span>
-          </div>
+          </Link>
           <div className="flex flex-col items-center gap-2">
             <StepIndicator currentStep={step} totalSteps={3} />
             <p className="text-xs text-slate-500">{renderStepLabel()}</p>
@@ -559,7 +576,15 @@ export default function OnboardingPage() {
           )}
         </div>
       </div>
+
+      <div className="mt-4 text-center">
+        <Link
+          href="/dashboard"
+          className="text-xs text-slate-500 underline-offset-4 hover:text-slate-300 hover:underline"
+        >
+          Skip setup for now
+        </Link>
+      </div>
     </div>
   );
 }
-
