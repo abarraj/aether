@@ -14,5 +14,4 @@ export function buildInviteLink(rawToken: string): string {
 
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export const ALLOWED_INVITE_ROLES = ['admin', 'editor', 'viewer'] as const;
-export type InviteRole = (typeof ALLOWED_INVITE_ROLES)[number];
+export { INVITABLE_ROLES as ALLOWED_INVITE_ROLES, type InvitableRole as InviteRole } from '@/lib/auth/permissions';
