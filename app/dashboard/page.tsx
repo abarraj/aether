@@ -18,13 +18,16 @@ import { format, subDays } from 'date-fns';
 
 import { useUser } from '@/hooks/use-user';
 import { useOrg } from '@/hooks/use-org';
-import { useKpis } from '@/hooks/use-kpis';
+import { useMetrics } from '@/hooks/use-metrics';
+import { useComputeStatus } from '@/hooks/use-compute-status';
+import { useDataRange } from '@/hooks/use-data-range';
 import { useBenchmarks } from '@/hooks/use-benchmarks';
 import { useRealtimeTable } from '@/hooks/use-realtime';
 import { toast } from 'sonner';
 import { AnimatedNumber } from '@/components/shared/animated-number';
 import { FirstRunBanner } from '@/components/shared/first-run-banner';
-import type { DateRange, Period } from '@/lib/data/aggregator';
+import { ComputeStatus } from '@/components/dashboard/compute-status';
+import type { DateRange, Period } from '@/lib/data/metric-aggregator';
 import { cn } from '@/lib/utils';
 
 type RangePreset = '7d' | '30d' | '90d';
@@ -113,8 +116,10 @@ export default function DashboardPage() {
 
   const effectiveOrgIds =
     activeOrgIds.length > 0 ? activeOrgIds : org ? [org.id] : [];
-  const { kpis, isLoading } = useKpis(period, range, refreshKey, effectiveOrgIds);
+  const { metrics: kpis, isLoading } = useMetrics(period, range, refreshKey, effectiveOrgIds);
   const { benchmark } = useBenchmarks(org?.industry ?? null);
+  const { isComputing, lastComputedAt, error: computeError } = useComputeStatus(org?.id ?? null);
+  const { dataRange } = useDataRange(org?.id ?? null, refreshKey);
 
   const greetingName =
     profile?.full_name?.split(' ')[0] ??
@@ -140,7 +145,6 @@ export default function DashboardPage() {
     const start = subDays(end, days - 1);
 
     setPreset(nextPreset);
-    setPeriod('daily');
     setRange({
       start: format(start, 'yyyy-MM-dd'),
       end: format(end, 'yyyy-MM-dd'),
@@ -395,6 +399,26 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Period toggles: daily / weekly / monthly */}
+          <div className="inline-flex rounded-2xl border border-zinc-800 bg-zinc-950/80 p-1 text-xs text-slate-300">
+            {(['daily', 'weekly', 'monthly'] as Period[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPeriod(p)}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+                  period === p
+                    ? 'bg-zinc-800 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-300',
+                )}
+              >
+                {p === 'daily' ? 'Day' : p === 'weekly' ? 'Week' : 'Month'}
+              </button>
+            ))}
+          </div>
+
+          {/* Range presets */}
           <div className="inline-flex rounded-2xl border border-zinc-800 bg-zinc-950/80 p-1 text-xs text-slate-300">
             {(['7d', '30d', '90d'] as RangePreset[]).map((option) => {
               const isDisabled =
@@ -416,12 +440,26 @@ export default function DashboardPage() {
                         : 'text-slate-500 hover:text-slate-300',
                   )}
                 >
-                  {option === '7d' && 'This week'}
-                  {option === '30d' && 'This month'}
-                  {option === '90d' && 'This quarter'}
+                  {option === '7d' && '7d'}
+                  {option === '30d' && '30d'}
+                  {option === '90d' && '90d'}
                 </button>
               );
             })}
+          </div>
+
+          {/* Compute status + data range */}
+          <div className="flex items-center gap-2">
+            <ComputeStatus
+              isComputing={isComputing}
+              lastComputedAt={lastComputedAt}
+              error={computeError}
+            />
+            {dataRange && (
+              <span className="text-[10px] text-slate-600">
+                {format(new Date(dataRange.min), 'MMM d')} &ndash; {format(new Date(dataRange.max), 'MMM d, yyyy')}
+              </span>
+            )}
           </div>
           <button
             type="button"
