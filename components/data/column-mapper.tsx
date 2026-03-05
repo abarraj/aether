@@ -168,45 +168,45 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
     setValidationError(null);
   };
 
-  const validateMapping = (): string | null => {
+  /** Non-blocking warnings — never prevents import. */
+  const getWarnings = (): string[] => {
+    const warnings: string[] = [];
     const revenueCols = Object.values(mapping).filter((r) => r === 'revenue');
     const dimensionCols = Object.values(mapping).filter((r) => r === 'dimension');
     const dateCols = Object.values(mapping).filter((r) => r === 'date');
 
     if (revenueCols.length < 1) {
-      return 'At least one column must be mapped to Revenue.';
+      warnings.push('No revenue column mapped — performance metrics will not be generated.');
     }
     if (dimensionCols.length === 0) {
-      return 'Exactly one column must be mapped to Dimension (Group by).';
+      warnings.push('No dimension column mapped — data will be imported without grouping.');
     }
     if (dimensionCols.length > 1) {
-      return 'Only one column can be mapped to Dimension. Please map the others to a different role.';
+      warnings.push('Multiple dimension columns mapped — only the first will be used for grouping.');
     }
     if (dateCols.length < 1) {
-      return 'At least one column must be mapped to Date for weekly grouping.';
+      warnings.push('No date column mapped — weekly trends will not be available.');
     }
-    return null;
+    return warnings;
   };
 
   const handleImportWithoutOntology = () => {
-    const err = validateMapping();
-    if (err) {
-      setValidationError(err);
-      toast.error(err);
-      return;
+    const warnings = getWarnings();
+    if (warnings.length > 0) {
+      setValidationError(warnings.join(' '));
+    } else {
+      setValidationError(null);
     }
-    setValidationError(null);
     onImport?.({ dataType, mapping, ontology: null });
   };
 
   const handleImportWithOntology = () => {
-    const err = validateMapping();
-    if (err) {
-      setValidationError(err);
-      toast.error(err);
-      return;
+    const warnings = getWarnings();
+    if (warnings.length > 0) {
+      setValidationError(warnings.join(' '));
+    } else {
+      setValidationError(null);
     }
-    setValidationError(null);
     if (!enableOntology || !entityTypeId || !nameColumn) {
       onImport?.({ dataType, mapping, ontology: null });
       return;
@@ -353,7 +353,7 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
           </div>
 
           {validationError && (
-            <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">
+            <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
               {validationError}
             </div>
           )}
@@ -571,7 +571,7 @@ export function ColumnMapper({ headers, rows, onImport }: ColumnMapperProps) {
           </div>
 
           {validationError && (
-            <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">
+            <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
               {validationError}
             </div>
           )}
