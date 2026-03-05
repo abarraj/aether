@@ -1,11 +1,14 @@
-// Smart performance gap engine.
-// Auto-detects dimensions from entity_types (ontology detection results)
-// and computes actual vs expected revenue by dimension × week.
+// Performance gap engine v2.
+// Computes revenue leakage as an explainable metric:
+//   leakage = max(0, baseline - actual)
+//   baseline = rolling median of previous 4 weeks (per dimension value)
 //
 // PRIORITY: AI-detected revenue columns > hardcoded REVENUE_CANDIDATES.
+// Uses robust date parsing from transaction-facts for consistency with KPIs.
 
 import { parseISO, startOfISOWeek } from 'date-fns';
 import { createClient } from '@/lib/supabase/server';
+import { parseDate, detectDateFormat, parseNumeric } from '@/lib/data/transaction-facts';
 
 type DataRow = {
   date: string | null;
@@ -16,23 +19,6 @@ function normKey(v: string): string {
   return v.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function parseNum(val: unknown): number {
-  if (val == null) return 0;
-  if (typeof val === 'number') return Number.isNaN(val) ? 0 : val;
-  const s = String(val).trim();
-  // Parenthetical negatives: (500) => -500
-  const parenMatch = /^\(([0-9.,]+)\)$/.exec(s);
-  const cleaned = parenMatch
-    ? `-${parenMatch[1]}`
-    : s.replace(/[$€£,\s%]/g, '');
-  const n = Number(cleaned);
-  return Number.isNaN(n) ? 0 : n;
-}
-
-/**
- * Resolve an AI-detected column name to the actual key in a data row.
- * Handles case, underscores vs spaces, and partial containment.
- */
 function resolveRevenueHeader(detected: string, dataKeys: string[]): string | null {
   if (!detected) return null;
   const dNorm = normKey(detected).replace(/_/g, ' ');
@@ -57,41 +43,32 @@ function toWeekStart(dateStr: string): string | null {
   }
 }
 
-// Find the revenue column by scanning data keys
+// Revenue column priority: "Total" first, then AI detection, then fallbacks.
+const TOTAL_CANDIDATES = ['total', 'total paid', 'amount paid', 'final amount', 'net total'];
 const REVENUE_CANDIDATES = [
-  'revenue',
-  'amount',
-  'total',
-  'net',
-  'gross',
-  'sales',
-  'income',
-  'total_revenue',
-  'revenue_per_class',
-  'price',
+  'revenue', 'amount', 'net', 'gross', 'sales',
+  'income', 'total_revenue', 'revenue_per_class', 'price',
 ];
 
 const EXPECTED_CANDIDATES = [
-  'target_revenue',
-  'expected_revenue',
-  'max_possible_revenue',
-  'target',
-  'expected',
-  'budget',
-  'capacity_revenue',
-  'max_revenue',
+  'target_revenue', 'expected_revenue', 'max_possible_revenue',
+  'target', 'expected', 'budget', 'capacity_revenue', 'max_revenue',
 ];
 
 function findColumn(dataKeys: string[], candidates: string[]): string | null {
   const lowerKeys = dataKeys.map((k) => normKey(k));
   for (const candidate of candidates) {
     const idx = lowerKeys.indexOf(candidate);
-    if (idx !== -1) return dataKeys[idx]; // return original case
+    if (idx !== -1) return dataKeys[idx];
+  }
+  // Partial match
+  for (const candidate of candidates) {
+    const idx = lowerKeys.findIndex((h) => h.includes(candidate) || candidate.includes(h));
+    if (idx !== -1) return dataKeys[idx];
   }
   return null;
 }
 
-// Find dimension columns from entity_types that were auto-detected
 async function getDimensionColumns(
   orgId: string,
   uploadId: string,
@@ -105,7 +82,6 @@ async function getDimensionColumns(
 
   if (!entityTypes || entityTypes.length === 0) return [];
 
-  // Get a sample data row to check which columns exist
   const { data: sampleRows } = await supabase
     .from('data_rows')
     .select('data')
@@ -122,47 +98,31 @@ async function getDimensionColumns(
   const result: { slug: string; name: string; sourceColumn: string }[] = [];
 
   for (const et of entityTypes) {
-    // Use stored source_column if available
     const etWithSource = et as { slug: string; name: string; source_column?: string | null };
     if (etWithSource.source_column && lowerKeys.includes(normKey(etWithSource.source_column))) {
       const originalCol = dataKeys[lowerKeys.indexOf(normKey(etWithSource.source_column))];
       const sampleVal = sampleData[originalCol];
-      if (
-        sampleVal != null &&
-        typeof sampleVal === 'string' &&
-        sampleVal.length > 0
-      ) {
-        result.push({
-          slug: et.slug,
-          name: et.name,
-          sourceColumn: originalCol,
-        });
+      if (sampleVal != null && typeof sampleVal === 'string' && sampleVal.length > 0) {
+        result.push({ slug: et.slug, name: et.name, sourceColumn: originalCol });
         continue;
       }
     }
 
-    // Fallback: heuristic matching
     const slugNorm = normKey(et.slug.replace(/_/g, ' '));
     const slugUnderscore = et.slug.toLowerCase();
-
     let matchedCol: string | null = null;
 
     const exactIdx = lowerKeys.indexOf(slugUnderscore);
-    if (exactIdx !== -1) {
-      matchedCol = dataKeys[exactIdx];
-    }
-
+    if (exactIdx !== -1) matchedCol = dataKeys[exactIdx];
     if (!matchedCol) {
       const spaceIdx = lowerKeys.indexOf(slugNorm);
       if (spaceIdx !== -1) matchedCol = dataKeys[spaceIdx];
     }
-
     if (!matchedCol) {
       const nameNorm = normKey(et.name);
       const nameIdx = lowerKeys.indexOf(nameNorm);
       if (nameIdx !== -1) matchedCol = dataKeys[nameIdx];
     }
-
     if (!matchedCol) {
       const partialIdx = lowerKeys.findIndex(
         (k) => k.includes(slugUnderscore) || slugUnderscore.includes(k),
@@ -172,11 +132,7 @@ async function getDimensionColumns(
 
     if (matchedCol) {
       const sampleVal = sampleData[matchedCol];
-      if (
-        sampleVal != null &&
-        typeof sampleVal === 'string' &&
-        sampleVal.length > 0
-      ) {
+      if (sampleVal != null && typeof sampleVal === 'string' && sampleVal.length > 0) {
         result.push({ slug: et.slug, name: et.name, sourceColumn: matchedCol });
       }
     }
@@ -185,13 +141,72 @@ async function getDimensionColumns(
   return result;
 }
 
+// ── Rolling Median Baseline ─────────────────────────────────────
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0
+    ? sorted[mid]
+    : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Compute rolling baseline for each dimension value per week.
+ * Uses median of previous N weeks (default 4).
+ *
+ * Returns a map: dimensionValue → weekStart → { baseline, weeksUsed }
+ */
+function computeRollingBaselines(
+  weeklyActuals: Map<string, Map<string, number>>, // dimValue → week → actual
+  sortedWeeks: string[],
+  lookback = 4,
+): Map<string, Map<string, { baseline: number; weeksUsed: number }>> {
+  const result = new Map<string, Map<string, { baseline: number; weeksUsed: number }>>();
+
+  for (const [dimValue, weekMap] of weeklyActuals) {
+    const baselines = new Map<string, { baseline: number; weeksUsed: number }>();
+
+    for (let i = 0; i < sortedWeeks.length; i++) {
+      const week = sortedWeeks[i];
+      // Gather previous weeks' actuals
+      const prevActuals: number[] = [];
+      for (let j = Math.max(0, i - lookback); j < i; j++) {
+        const prevWeek = sortedWeeks[j];
+        const val = weekMap.get(prevWeek);
+        if (val !== undefined && val > 0) prevActuals.push(val);
+      }
+
+      baselines.set(week, {
+        baseline: prevActuals.length >= 3 ? median(prevActuals) : 0,
+        weeksUsed: prevActuals.length,
+      });
+    }
+
+    result.set(dimValue, baselines);
+  }
+
+  return result;
+}
+
+// ── Main Computation ────────────────────────────────────────────
+
+export interface LeakageExplanation {
+  baseline: number;
+  actual: number;
+  weeksUsed: number;
+  insufficient: boolean;
+  method: 'rolling_median_4w';
+}
+
 export async function computePerformanceGaps(
   orgId: string,
   uploadId: string,
 ): Promise<void> {
   const supabase = await createClient();
 
-  // Fetch upload detection to get AI-detected revenue columns
+  // Fetch upload detection for AI-detected revenue columns
   const { data: upload } = await supabase
     .from('uploads')
     .select('detection')
@@ -208,41 +223,67 @@ export async function computePerformanceGaps(
 
   if (rowsError || !rows || rows.length === 0) return;
 
-  const rowsWithDate = rows.filter((r) => r.date != null && r.date.length > 0);
-  if (rowsWithDate.length === 0) return;
-
-  const sampleData = rowsWithDate[0].data as Record<string, unknown>;
+  const sampleData = rows[0].data as Record<string, unknown>;
   const dataKeys = Object.keys(sampleData);
 
-  // Revenue column resolution: AI detection FIRST, then hardcoded fallback
-  let revenueCol: string | null = null;
+  // ── Revenue column resolution ──────────────────────────────────
+  // Priority: "Total" > AI detection > hardcoded fallback
+  let revenueCol = findColumn(dataKeys, TOTAL_CANDIDATES);
 
-  if (upload?.detection && typeof upload.detection === 'object') {
+  if (!revenueCol && upload?.detection && typeof upload.detection === 'object') {
     const det = upload.detection as Record<string, unknown>;
     if (det.metrics && typeof det.metrics === 'object') {
       const m = det.metrics as Record<string, unknown>;
       const detectedRevCols = Array.isArray(m.revenueColumns) ? m.revenueColumns as string[] : [];
-      // Try each AI-detected revenue column until one resolves
       for (const detCol of detectedRevCols) {
         const resolved = resolveRevenueHeader(detCol, dataKeys);
-        if (resolved) {
-          revenueCol = resolved;
-          break;
-        }
+        if (resolved) { revenueCol = resolved; break; }
       }
     }
   }
 
-  // Fallback to hardcoded candidates only if AI detection didn't resolve
   if (!revenueCol) {
     revenueCol = findColumn(dataKeys, REVENUE_CANDIDATES);
   }
   if (!revenueCol) return;
 
-  const expectedCol = findColumn(dataKeys, EXPECTED_CANDIDATES);
+  // ── Detect date format ─────────────────────────────────────────
+  const dateSamples: unknown[] = [];
+  for (const row of rows.slice(0, 50)) {
+    const record = row.data as Record<string, unknown>;
+    dateSamples.push(row.date ?? findDateVal(record));
+  }
+  const dateFormat = detectDateFormat(dateSamples);
+  const dayFirst = dateFormat !== 'MM/dd/yyyy';
+
+  // ── Parse rows with robust dates ───────────────────────────────
+  const parsedRows: { weekStart: string; data: Record<string, unknown>; revenue: number }[] = [];
+
+  for (const row of rows) {
+    const record = row.data as Record<string, unknown>;
+    const rawDate = row.date ?? findDateVal(record);
+    const parsed = parseDate(rawDate, dayFirst);
+    if (!parsed) continue;
+
+    const isoDate = parsed.toISOString().slice(0, 10);
+    const weekStart = toWeekStart(isoDate);
+    if (!weekStart) continue;
+
+    const revenue = parseNumeric(record[revenueCol!]) ?? 0;
+    parsedRows.push({ weekStart, data: record, revenue });
+  }
+
+  if (parsedRows.length === 0) return;
 
   const dimensions = await getDimensionColumns(orgId, uploadId);
   if (dimensions.length === 0) return;
+
+  // ── Collect all weeks sorted ───────────────────────────────────
+  const weekSet = new Set(parsedRows.map((r) => r.weekStart));
+  const sortedWeeks = [...weekSet].sort();
+
+  // Need at least 3 weeks for meaningful baselines
+  const minWeeksForLeakage = 3;
 
   const upsertRows: {
     org_id: string;
@@ -259,60 +300,46 @@ export async function computePerformanceGaps(
   }[] = [];
 
   for (const dim of dimensions) {
-    const groups = new Map<string, { actual: number; expected: number }>();
+    // Build weekly actuals per dimension value
+    const weeklyActuals = new Map<string, Map<string, number>>();
 
-    for (const row of rowsWithDate) {
-      const weekStart = toWeekStart(row.date!);
-      if (!weekStart) continue;
-
-      const data = row.data as Record<string, unknown>;
-      const dimValue = String(data[dim.sourceColumn] ?? '').trim();
+    for (const row of parsedRows) {
+      const dimValue = String(row.data[dim.sourceColumn] ?? '').trim();
       if (!dimValue) continue;
 
-      const key = `${weekStart}\0${dimValue}`;
-      const actual = parseNum(data[revenueCol]);
-      const expected = expectedCol ? parseNum(data[expectedCol]) : 0;
-
-      const existing = groups.get(key);
-      if (existing) {
-        existing.actual += actual;
-        if (expectedCol) existing.expected += expected;
-      } else {
-        groups.set(key, { actual, expected: expectedCol ? expected : 0 });
-      }
+      if (!weeklyActuals.has(dimValue)) weeklyActuals.set(dimValue, new Map());
+      const weekMap = weeklyActuals.get(dimValue)!;
+      weekMap.set(row.weekStart, (weekMap.get(row.weekStart) ?? 0) + row.revenue);
     }
 
-    const byWeek = new Map<
-      string,
-      Map<string, { actual: number; expected: number }>
-    >();
-    for (const [key, vals] of groups) {
-      const [weekStart, dimValue] = key.split('\0');
-      let weekMap = byWeek.get(weekStart);
-      if (!weekMap) {
-        weekMap = new Map();
-        byWeek.set(weekStart, weekMap);
-      }
-      weekMap.set(dimValue, vals);
-    }
+    // Compute rolling baselines
+    const baselines = computeRollingBaselines(weeklyActuals, sortedWeeks);
 
-    for (const [weekStart, weekMap] of byWeek) {
-      const maxActual = Math.max(
-        ...Array.from(weekMap.values()).map((v) => v.actual),
-        0,
-      );
+    for (const [dimValue, weekMap] of weeklyActuals) {
+      const dimBaselines = baselines.get(dimValue);
 
-      for (const [dimValue, vals] of weekMap) {
-        let expectedValue = vals.expected;
-        if (!expectedCol || expectedValue === 0) {
+      for (const [weekStart, actual] of weekMap) {
+        const baselineInfo = dimBaselines?.get(weekStart);
+        const weeksUsed = baselineInfo?.weeksUsed ?? 0;
+        const baseline = baselineInfo?.baseline ?? 0;
+
+        // If insufficient history, use max-in-week across dimension values as fallback
+        let expectedValue: number;
+        if (weeksUsed >= minWeeksForLeakage && baseline > 0) {
+          expectedValue = baseline;
+        } else {
+          // Fallback: max actual across all dim values for this week
+          let maxActual = 0;
+          for (const [, wm] of weeklyActuals) {
+            maxActual = Math.max(maxActual, wm.get(weekStart) ?? 0);
+          }
           expectedValue = maxActual;
         }
 
-        const gapValue = Math.max(expectedValue - vals.actual, 0);
-        const gapPct =
-          expectedValue > 0
-            ? Math.round((gapValue / expectedValue) * 10000) / 100
-            : null;
+        const gapValue = Math.max(expectedValue - actual, 0);
+        const gapPct = expectedValue > 0
+          ? Math.round((gapValue / expectedValue) * 10000) / 100
+          : null;
 
         upsertRows.push({
           org_id: orgId,
@@ -322,7 +349,7 @@ export async function computePerformanceGaps(
           period_start: weekStart,
           dimension_field: dim.sourceColumn,
           dimension_value: dimValue || '(blank)',
-          actual_value: Math.round(vals.actual * 100) / 100,
+          actual_value: Math.round(actual * 100) / 100,
           expected_value: Math.round(expectedValue * 100) / 100,
           gap_value: Math.round(gapValue * 100) / 100,
           gap_pct: gapPct,
@@ -393,4 +420,19 @@ export async function computePerformanceGaps(
   } catch (err) {
     console.error('Target update failed:', err);
   }
+}
+
+// Helper to find a date value in a data record
+function findDateVal(record: Record<string, unknown>): unknown {
+  const keys = Object.keys(record);
+  const priority = ['date', 'time', 'timestamp', 'transaction date', 'sale date', 'created at'];
+  for (const want of priority) {
+    const match = keys.find((k) => normKey(k) === want);
+    if (match) return record[match];
+  }
+  const loose = keys.find((k) => {
+    const nk = normKey(k);
+    return nk.includes('date') || nk.includes('time');
+  });
+  return loose ? record[loose] : null;
 }
