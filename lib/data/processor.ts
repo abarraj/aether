@@ -350,10 +350,10 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
   if (streamType === 'transactions_sales') {
     const { data: txFacts, error: txError } = await supabase
       .from('transaction_facts')
-      .select('date_key, gross_total, is_refund')
+      .select('transacted_at, gross_total, is_refund')
       .eq('org_id', orgId)
       .eq('upload_id', uploadId)
-      .returns<{ date_key: string; gross_total: number; is_refund: boolean }[]>();
+      .returns<{ transacted_at: string; gross_total: number; is_refund: boolean }[]>();
 
     if (txError || !txFacts || txFacts.length === 0) {
       // Fallback: build in-memory if facts not yet written (race condition)
@@ -398,7 +398,8 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     const monthlyMetrics: MetricAccumulator = {};
 
     for (const fact of txFacts) {
-      const dateKey = fact.date_key;
+      // Derive date_key from transacted_at (table has no date_key column)
+      const dateKey = fact.transacted_at.slice(0, 10);
       const weekKey = formatISO(startOfISOWeek(parseISO(dateKey)), { representation: 'date' });
       const monthKey = formatISO(startOfMonth(parseISO(dateKey)), { representation: 'date' });
 

@@ -10,9 +10,10 @@ import { getOrgContext } from '@/lib/auth/org-context';
 interface StaffEntry {
   id: string;
   name: string;
-  normalized_name: string;
   source: string;
   is_active: boolean;
+  role: string | null;
+  department: string | null;
 }
 
 interface ClientEntry {
@@ -33,7 +34,7 @@ export async function GET() {
     // Fetch staff from staff_directory
     const { data: staffRows } = await supabase
       .from('staff_directory')
-      .select('id, name, normalized_name, source, is_active')
+      .select('id, name, source, is_active, role, department')
       .eq('org_id', orgId)
       .order('name', { ascending: true })
       .returns<StaffEntry[]>();

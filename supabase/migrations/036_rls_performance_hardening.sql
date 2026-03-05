@@ -5,8 +5,7 @@
 --    across all RLS policy checks in a single query.
 --
 -- 2. Add org-scoped indexes on the three new fact-layer tables
---    (transaction_facts, staff_directory, schema_memory) to ensure
---    efficient RLS policy evaluation.
+--    to ensure efficient RLS policy evaluation.
 --
 -- APPLY MANUALLY in the Supabase SQL Editor.
 
@@ -24,37 +23,29 @@ AS $$
   WHERE id = auth.uid();
 $$;
 
--- Ensure the profiles.id column is indexed (should already be PK)
--- This guarantees a single indexed lookup in get_user_org_id().
--- CREATE INDEX IF NOT EXISTS idx_profiles_id ON public.profiles (id);  -- already PK
-
 -- ── 2. Indexes for transaction_facts ────────────────────────────
 
 -- Primary query pattern: WHERE org_id = X AND upload_id = Y
 CREATE INDEX IF NOT EXISTS idx_transaction_facts_org_upload
   ON public.transaction_facts (org_id, upload_id);
 
--- Performance gaps query: WHERE org_id = X, aggregate by staff_name + date_key
+-- Performance gaps query: WHERE org_id = X, aggregate by staff_name
 CREATE INDEX IF NOT EXISTS idx_transaction_facts_org_staff
   ON public.transaction_facts (org_id, staff_name);
 
--- Time-series aggregation
+-- Time-series aggregation (derive date from transacted_at)
 CREATE INDEX IF NOT EXISTS idx_transaction_facts_org_date
-  ON public.transaction_facts (org_id, date_key);
+  ON public.transaction_facts (org_id, transacted_at);
 
 -- ── 3. Indexes for staff_directory ──────────────────────────────
 
--- Upsert key: (org_id, normalized_name) — should already be unique index
+-- Upsert key: (org_id, name)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_directory_org_name
-  ON public.staff_directory (org_id, normalized_name);
+  ON public.staff_directory (org_id, name);
 
 -- Active staff lookup (used by leakage engine)
 CREATE INDEX IF NOT EXISTS idx_staff_directory_org_active
   ON public.staff_directory (org_id, is_active);
-
--- Delete cascade: find roster-sourced staff by upload_id
-CREATE INDEX IF NOT EXISTS idx_staff_directory_org_upload_source
-  ON public.staff_directory (org_id, upload_id, source);
 
 -- ── 4. Indexes for schema_memory ────────────────────────────────
 

@@ -148,19 +148,10 @@ export default function DataPage() {
           // transaction_facts table may not exist yet
         }
 
-        // Delete ONLY roster-sourced staff from this upload.
-        // Transaction-sourced and manual staff are NOT deleted.
+        // NOTE: staff_directory has no upload_id column, so we cannot
+        // scope deletion to a specific upload. Roster staff are only
+        // deleted when explicitly requested, not on upload deletion.
         // schema_memory is NEVER deleted (institutional learning).
-        try {
-          await supabase
-            .from('staff_directory')
-            .delete()
-            .eq('upload_id', id)
-            .eq('org_id', org.id)
-            .eq('source', 'roster');
-        } catch {
-          // staff_directory table may not exist yet
-        }
 
         const { data: usedRelTypeIds } = await supabase
           .from('entity_relationships')

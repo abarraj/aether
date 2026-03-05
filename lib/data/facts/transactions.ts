@@ -8,6 +8,11 @@
 // Refund detection:   Type contains 'refund'/'credit' OR Total is negative.
 // Channel inference:  'online' when normalized(User) == normalized(Client).
 // Date format:        DD/MM/YYYY HH:mm:ss (Lebanon local time).
+//
+// TABLE SCHEMA (actual columns):
+//   id, org_id, upload_id, transacted_at, client_name, staff_name,
+//   offering_name, branch, currency, gross_total, discount, tax,
+//   type, channel, is_refund, created_at
 
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -27,7 +32,6 @@ interface TransactionFactRow {
   org_id: string;
   upload_id: string;
   transacted_at: string;
-  date_key: string;
   gross_total: number;
   discount: number | null;
   tax: number | null;
@@ -37,8 +41,7 @@ interface TransactionFactRow {
   staff_name: string | null;
   client_name: string | null;
   offering_name: string | null;
-  branch_name: string | null;
-  transaction_id: string | null;
+  branch: string | null;
 }
 
 // ── Public API ─────────────────────────────────────────────────
@@ -81,7 +84,6 @@ export async function writeTransactionFacts(
     org_id: orgId,
     upload_id: uploadId,
     transacted_at: f.transactedAt.toISOString(),
-    date_key: f.dateKey,
     gross_total: Math.round(f.amountTotal * 100) / 100,
     discount: f.amountDiscount != null ? Math.round(f.amountDiscount * 100) / 100 : null,
     tax: f.amountTax != null ? Math.round(f.amountTax * 100) / 100 : null,
@@ -91,8 +93,7 @@ export async function writeTransactionFacts(
     staff_name: f.actorUserName,
     client_name: f.clientName,
     offering_name: f.offeringName,
-    branch_name: f.branchName,
-    transaction_id: f.transactionId,
+    branch: f.branchName,
   }));
 
   // Batch insert (500 rows at a time to avoid payload limits)

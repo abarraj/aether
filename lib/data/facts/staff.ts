@@ -9,6 +9,11 @@
 //
 // Roster CSVs require NO revenue and NO date columns — just a name column.
 // The canonicalizer extracts names, normalizes them, and upserts.
+//
+// TABLE SCHEMA (actual columns):
+//   id, org_id, name, role, department, is_active, source,
+//   pay_type, pay_rate, created_at, updated_at
+//   NOTE: no normalized_name, no upload_id columns.
 
 import { createClient } from '@/lib/supabase/server';
 import { normalizePersonName } from '@/lib/ai/ontology-role-inference';
@@ -17,9 +22,7 @@ import { normalizePersonName } from '@/lib/ai/ontology-role-inference';
 
 export interface StaffDirectoryEntry {
   org_id: string;
-  upload_id: string | null;
   name: string;
-  normalized_name: string;
   source: 'roster' | 'transaction' | 'manual' | 'payroll';
   is_active: boolean;
 }
@@ -193,13 +196,13 @@ export function extractStaffFromTransactions(
 
 /**
  * Upsert staff names into public.staff_directory.
- * Uses (org_id, normalized_name) as the conflict key.
- * Does NOT overwrite is_active or source if the row already exists
- * with a higher-priority source.
+ * Uses (org_id, name) as the conflict key.
+ * Table has no normalized_name or upload_id columns.
+ * Does NOT overwrite is_active or source if the row already exists.
  */
 export async function writeStaffDirectory(
   orgId: string,
-  uploadId: string | null,
+  _uploadId: string | null,
   entries: { name: string; normalizedName: string }[],
   source: 'roster' | 'transaction' | 'manual' | 'payroll',
 ): Promise<number> {
@@ -207,11 +210,10 @@ export async function writeStaffDirectory(
 
   const supabase = await createClient();
 
+  // Table columns: org_id, name, source, is_active (no normalized_name, no upload_id)
   const rows = entries.map((e) => ({
     org_id: orgId,
-    upload_id: uploadId,
     name: e.name,
-    normalized_name: e.normalizedName,
     source,
     is_active: true,
   }));
@@ -223,7 +225,7 @@ export async function writeStaffDirectory(
     const { error } = await supabase
       .from('staff_directory')
       .upsert(batch, {
-        onConflict: 'org_id,normalized_name',
+        onConflict: 'org_id,name',
         ignoreDuplicates: true, // don't overwrite existing rows
       });
 
@@ -246,7 +248,8 @@ export async function writeStaffDirectory(
 
 /**
  * Load active staff names from staff_directory for a given org.
- * Returns a Set of normalized names for fast lookup.
+ * Returns a Set of lowercase-trimmed names for fast lookup.
+ * (Table has no normalized_name — we normalize the name column in-memory.)
  */
 export async function loadActiveStaff(
   orgId: string,
@@ -254,31 +257,38 @@ export async function loadActiveStaff(
   const supabase = await createClient();
   const { data } = await supabase
     .from('staff_directory')
-    .select('normalized_name')
+    .select('name')
     .eq('org_id', orgId)
     .eq('is_active', true);
 
   const names = new Set<string>();
-  for (const row of (data ?? []) as { normalized_name: string }[]) {
-    if (row.normalized_name) names.add(row.normalized_name);
+  for (const row of (data ?? []) as { name: string }[]) {
+    if (row.name) {
+      // Normalize for matching: lowercase, strip non-alphanumeric
+      names.add(row.name.trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+    }
   }
   return names;
 }
 
 /**
- * Delete roster-sourced staff entries for a given upload.
+ * Delete roster-sourced staff entries for a given org + source.
  * Called during upload deletion cascade.
  * Does NOT delete transaction-sourced or manual entries.
+ *
+ * NOTE: table has no upload_id column, so we can only delete by org_id + source.
+ * This means deleting ANY upload that imported a roster will remove ALL
+ * roster-sourced staff for that org. This is acceptable because a new
+ * roster upload will re-populate the directory.
  */
 export async function deleteRosterStaff(
   orgId: string,
-  uploadId: string,
+  _uploadId: string,
 ): Promise<void> {
   const supabase = await createClient();
   await supabase
     .from('staff_directory')
     .delete()
     .eq('org_id', orgId)
-    .eq('upload_id', uploadId)
     .eq('source', 'roster');
 }

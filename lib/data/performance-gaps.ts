@@ -17,7 +17,6 @@ import { loadActiveStaff } from '@/lib/data/facts/staff';
 
 interface TransactionFactRow {
   transacted_at: string;
-  date_key: string;
   gross_total: number;
   is_refund: boolean;
   staff_name: string | null;
@@ -112,7 +111,7 @@ export async function computePerformanceGaps(
   // ── 2. Fetch transaction facts for this upload ─────────────────
   const { data: facts, error: factsError } = await supabase
     .from('transaction_facts')
-    .select('transacted_at, date_key, gross_total, is_refund, staff_name, channel')
+    .select('transacted_at, gross_total, is_refund, staff_name, channel')
     .eq('org_id', orgId)
     .eq('upload_id', uploadId)
     .returns<TransactionFactRow[]>();
@@ -134,7 +133,8 @@ export async function computePerformanceGaps(
     const normalized = normalizeStaffName(fact.staff_name);
     if (!activeStaff.has(normalized)) continue;
 
-    const weekStart = toWeekStart(fact.date_key);
+    // Derive date from transacted_at (table has no date_key column)
+    const weekStart = toWeekStart(fact.transacted_at.slice(0, 10));
     if (!weekStart) continue;
 
     weekSet.add(weekStart);

@@ -2,7 +2,10 @@
 // Tracks column → canonical_field mappings per org.
 // Learns from each upload so future imports can auto-map columns.
 //
-// Table: public.schema_memory
+// TABLE SCHEMA (actual columns):
+//   id, org_id, source_kind, source_column, canonical_field,
+//   confidence, last_seen_at, created_at
+//
 // Unique key: (org_id, source_column)
 // Upsert: updates confidence when the same column is seen again.
 //
@@ -17,7 +20,6 @@ export interface SchemaMapping {
   sourceColumn: string;
   canonicalField: string;
   confidence: number;
-  sampleValues?: string[];
 }
 
 // Canonical field names that the system recognizes
@@ -139,7 +141,7 @@ const COLUMN_MAPPINGS: { pattern: RegExp; field: CanonicalField }[] = [
  */
 export function inferColumnMappings(
   headers: string[],
-  sampleRows?: Record<string, unknown>[],
+  _sampleRows?: Record<string, unknown>[],
 ): SchemaMapping[] {
   const mappings: SchemaMapping[] = [];
 
@@ -151,21 +153,10 @@ export function inferColumnMappings(
     let matched = false;
     for (const { pattern, field } of COLUMN_MAPPINGS) {
       if (pattern.test(trimmed)) {
-        const samples = sampleRows
-          ? sampleRows
-              .slice(0, 5)
-              .map((r) => {
-                const v = r[header];
-                return v != null ? String(v).trim() : '';
-              })
-              .filter((v) => v.length > 0)
-          : undefined;
-
         mappings.push({
           sourceColumn: header,
           canonicalField: field,
           confidence: 0.9, // High confidence for exact match
-          sampleValues: samples,
         });
         matched = true;
         break;
@@ -198,11 +189,15 @@ export function inferColumnMappings(
 /**
  * Upsert schema mappings into public.schema_memory.
  * Unique on (org_id, source_column).
- * Updates confidence and sample_values on conflict.
+ * Updates confidence and last_seen_at on conflict.
+ *
+ * Table columns: org_id, source_kind, source_column, canonical_field,
+ *                confidence, last_seen_at, created_at
+ * (no upload_id, no sample_values)
  */
 export async function writeSchemaMemory(
   orgId: string,
-  uploadId: string | null,
+  _uploadId: string | null,
   mappings: SchemaMapping[],
 ): Promise<number> {
   if (mappings.length === 0) return 0;
@@ -211,15 +206,14 @@ export async function writeSchemaMemory(
 
   const rows = mappings.map((m) => ({
     org_id: orgId,
-    upload_id: uploadId,
+    source_kind: 'csv_upload',
     source_column: m.sourceColumn,
     canonical_field: m.canonicalField,
     confidence: Math.round(m.confidence * 100) / 100,
-    sample_values: m.sampleValues ?? null,
+    last_seen_at: new Date().toISOString(),
   }));
 
   // Upsert with conflict on (org_id, source_column)
-  // Update confidence to the higher value and refresh sample_values
   let written = 0;
   for (let i = 0; i < rows.length; i += 500) {
     const batch = rows.slice(i, i + 500);
