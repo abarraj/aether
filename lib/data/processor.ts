@@ -1,11 +1,16 @@
 // Processes raw data_rows into aggregated KPI snapshots.
 // Supports single-upload processing and full org-level recompute
 // across multiple active data streams.
+//
+// PRIORITY: AI detection > user column_mapping > hardcoded heuristics.
+// Non-metric stream types (staff_roster, client_roster, schedule) skip
+// KPI generation gracefully — rows are kept for ontology, not for KPIs.
 
 import { parseISO, startOfDay, startOfISOWeek, startOfMonth, formatISO } from 'date-fns';
 
 import { createClient } from '@/lib/supabase/server';
 import { normalizeColumnMapping } from '@/lib/data/normalize-column-mapping';
+import type { DetectedMetrics, StreamType } from '@/lib/ai/ontology-detector';
 
 type DataRow = {
   date: string | null;
@@ -29,6 +34,14 @@ interface SnapshotMetric {
 }
 
 type MetricAccumulator = Record<string, SnapshotMetric>;
+
+/** Stream types that should NOT generate KPI snapshots. */
+const NON_KPI_STREAM_TYPES = new Set<string>([
+  'staff_roster',
+  'client_roster',
+  'schedule',
+  'inventory',
+]);
 
 // ── Shared Helpers ──────────────────────────────────────────────
 
@@ -141,6 +154,43 @@ function getByKeys(map: Record<string, unknown>, keys: string[]): number | undef
   return undefined;
 }
 
+/**
+ * NEW: Extract metrics using AI-detected column names.
+ * This is the FIRST priority — before user mapping and hardcoded keys.
+ */
+function extractFromDetection(
+  record: Record<string, unknown>,
+  detectedMetrics: DetectedMetrics,
+): SnapshotMetric {
+  const metrics: SnapshotMetric = {};
+
+  // Revenue: sum all AI-detected revenue columns
+  for (const col of detectedMetrics.revenueColumns) {
+    const n = parseNumeric(getValueByHeaderNormalized(record, col));
+    if (n !== null) metrics.revenue = (metrics.revenue ?? 0) + n;
+  }
+
+  // Cost: sum all AI-detected cost columns
+  for (const col of detectedMetrics.costColumns) {
+    const n = parseNumeric(getValueByHeaderNormalized(record, col));
+    if (n !== null) metrics.laborCost = (metrics.laborCost ?? 0) + n;
+  }
+
+  // Attendance: sum all AI-detected attendance columns
+  for (const col of detectedMetrics.attendanceColumns) {
+    const n = parseNumeric(getValueByHeaderNormalized(record, col));
+    if (n !== null) metrics.attendance = (metrics.attendance ?? 0) + n;
+  }
+
+  // Utilization: average all AI-detected utilization columns
+  for (const col of detectedMetrics.utilizationColumns) {
+    const n = parseNumeric(getValueByHeaderNormalized(record, col));
+    if (n !== null) metrics.utilization = (metrics.utilization ?? 0) + n;
+  }
+
+  return metrics;
+}
+
 function extractUniversal(record: Record<string, unknown>): SnapshotMetric {
   const lower: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(record)) {
@@ -245,27 +295,46 @@ function buildSnapshotRows(period: Period, bucket: MetricAccumulator, orgId: str
 export async function processUploadData(orgId: string, uploadId: string): Promise<void> {
   const supabase = await createClient();
 
+  // Fetch upload record including detection columns
   const { data: upload, error: uploadError } = await supabase
     .from('uploads')
-    .select('id, org_id, data_type')
+    .select('id, org_id, data_type, column_mapping, detection, detection_stream_type')
     .eq('id', uploadId)
     .eq('org_id', orgId)
-    .maybeSingle<UploadRow>();
+    .maybeSingle<UploadRow & {
+      column_mapping: Record<string, string> | null;
+      detection: Record<string, unknown> | null;
+      detection_stream_type: string | null;
+    }>();
 
   if (uploadError || !upload) {
     return;
   }
 
-  let columnMapping: Record<string, string> | null = null;
-  try {
-    const { data: mappingRow } = await supabase
-      .from('uploads')
-      .select('column_mapping')
-      .eq('id', uploadId)
-      .maybeSingle<{ column_mapping: Record<string, string> | null }>();
-    columnMapping = mappingRow?.column_mapping ?? null;
-  } catch {
-    // column_mapping column may not exist yet — proceed without it
+  // If stream type is non-KPI (staff_roster, client_roster, schedule, inventory),
+  // skip KPI generation entirely — rows exist for ontology only.
+  const streamType = (upload.detection_stream_type ?? 'unknown') as StreamType;
+  if (NON_KPI_STREAM_TYPES.has(streamType)) {
+    console.log(`[processor] Skipping KPI generation for ${streamType} upload ${uploadId}`);
+    return;
+  }
+
+  const columnMapping = upload.column_mapping ?? null;
+
+  // Extract detected metrics from the detection payload
+  let detectedMetrics: DetectedMetrics | null = null;
+  if (upload.detection && typeof upload.detection === 'object') {
+    const det = upload.detection as Record<string, unknown>;
+    if (det.metrics && typeof det.metrics === 'object') {
+      const m = det.metrics as Record<string, unknown>;
+      detectedMetrics = {
+        dateColumn: typeof m.dateColumn === 'string' ? m.dateColumn : null,
+        revenueColumns: Array.isArray(m.revenueColumns) ? m.revenueColumns as string[] : [],
+        costColumns: Array.isArray(m.costColumns) ? m.costColumns as string[] : [],
+        attendanceColumns: Array.isArray(m.attendanceColumns) ? m.attendanceColumns as string[] : [],
+        utilizationColumns: Array.isArray(m.utilizationColumns) ? m.utilizationColumns as string[] : [],
+      };
+    }
   }
 
   const { data: rows, error: rowsError } = await supabase
@@ -284,14 +353,22 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
   const monthlyMetrics: MetricAccumulator = {};
 
   const mapping = normalizeColumnMapping(columnMapping);
+  // Date header priority: detection > mapping > fallback
+  const detectedDateHeader = detectedMetrics?.dateColumn ?? null;
   const mappedDateHeader = getMappedHeader(mapping, 'date');
 
   for (const row of rows) {
     const record = row.data as Record<string, unknown>;
 
+    // Date resolution: row.date > detected date col > mapped date col > fallback
     const isoFromRow = row.date ? toDateKey(row.date) : null;
-    const rawDerived =
-      getValueByHeaderNormalized(record, mappedDateHeader) ?? findFallbackDateValue(record);
+    let rawDerived: unknown = null;
+    if (!isoFromRow) {
+      rawDerived =
+        getValueByHeaderNormalized(record, detectedDateHeader) ??
+        getValueByHeaderNormalized(record, mappedDateHeader) ??
+        findFallbackDateValue(record);
+    }
     const isoDerived = !isoFromRow ? normalizeToISODate(rawDerived) : null;
 
     const baseDateKey = toDateKey(isoFromRow ?? isoDerived);
@@ -303,7 +380,16 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
 
     const dataType = upload.data_type.toLowerCase();
 
-    let metrics: SnapshotMetric = extractFromMapping(record, mapping);
+    // Metric extraction priority:
+    // 1. AI-detected columns (source of truth)
+    // 2. User column_mapping
+    // 3. Hardcoded heuristic keys
+    // 4. Data-type-specific fallback
+    let metrics: SnapshotMetric = {};
+    if (detectedMetrics) {
+      metrics = extractFromDetection(record, detectedMetrics);
+    }
+    if (!hasAnyMetric(metrics)) metrics = extractFromMapping(record, mapping);
     if (!hasAnyMetric(metrics)) metrics = extractUniversal(record);
     if (!hasAnyMetric(metrics)) metrics = extractByDataType(record, dataType);
     if (!hasAnyMetric(metrics)) continue;
@@ -320,6 +406,9 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
   ];
 
   if (upsertRows.length === 0) {
+    if (streamType === 'transactions_sales') {
+      console.warn(`[processor] transactions_sales upload ${uploadId} produced 0 KPI rows — revenue column may be undetected`);
+    }
     return;
   }
 
@@ -334,6 +423,7 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
  * Recomputes ALL KPI snapshots for an org by aggregating across every
  * data_row belonging to active streams (or legacy uploads without a stream).
  * Deletes stale snapshots and rebuilds from scratch for determinism.
+ * Skips non-KPI uploads (staff_roster, client_roster, etc.).
  */
 export async function recomputeOrgKpis(orgId: string): Promise<void> {
   const supabase = await createClient();
@@ -348,23 +438,34 @@ export async function recomputeOrgKpis(orgId: string): Promise<void> {
 
   const activeStreamIds = new Set((activeStreams ?? []).map((s) => s.id));
 
-  // Get all uploads for this org
+  // Get all uploads for this org — including detection
   const { data: orgUploads } = await supabase
     .from('uploads')
-    .select('id, data_type, column_mapping, stream_id')
+    .select('id, data_type, column_mapping, stream_id, detection, detection_stream_type')
     .eq('org_id', orgId)
     .in('status', ['ready', 'processing'])
-    .returns<{ id: string; data_type: string; column_mapping: Record<string, string> | null; stream_id: string | null }[]>();
+    .returns<{
+      id: string;
+      data_type: string;
+      column_mapping: Record<string, string> | null;
+      stream_id: string | null;
+      detection: Record<string, unknown> | null;
+      detection_stream_type: string | null;
+    }[]>();
 
   if (!orgUploads || orgUploads.length === 0) {
     await supabase.from('kpi_snapshots').delete().eq('org_id', orgId);
     return;
   }
 
-  // Filter out uploads belonging to inactive streams
+  // Filter out uploads belonging to inactive streams AND non-KPI stream types
   const activeUploads = orgUploads.filter((u) => {
     if (!u.stream_id) return true; // legacy uploads without stream always included
-    return activeStreamIds.has(u.stream_id);
+    if (!activeStreamIds.has(u.stream_id)) return false;
+    // Skip non-KPI stream types
+    const st = u.detection_stream_type ?? 'unknown';
+    if (NON_KPI_STREAM_TYPES.has(st)) return false;
+    return true;
   });
 
   if (activeUploads.length === 0) {
@@ -376,6 +477,26 @@ export async function recomputeOrgKpis(orgId: string): Promise<void> {
   const uploadMappings = new Map(
     activeUploads.map((u) => [u.id, normalizeColumnMapping(u.column_mapping)]),
   );
+
+  // Build per-upload detected metrics map
+  const uploadDetectedMetrics = new Map<string, DetectedMetrics | null>();
+  for (const u of activeUploads) {
+    let dm: DetectedMetrics | null = null;
+    if (u.detection && typeof u.detection === 'object') {
+      const det = u.detection as Record<string, unknown>;
+      if (det.metrics && typeof det.metrics === 'object') {
+        const m = det.metrics as Record<string, unknown>;
+        dm = {
+          dateColumn: typeof m.dateColumn === 'string' ? m.dateColumn : null,
+          revenueColumns: Array.isArray(m.revenueColumns) ? m.revenueColumns as string[] : [],
+          costColumns: Array.isArray(m.costColumns) ? m.costColumns as string[] : [],
+          attendanceColumns: Array.isArray(m.attendanceColumns) ? m.attendanceColumns as string[] : [],
+          utilizationColumns: Array.isArray(m.utilizationColumns) ? m.utilizationColumns as string[] : [],
+        };
+      }
+    }
+    uploadDetectedMetrics.set(u.id, dm);
+  }
 
   // Fetch all data_rows for active uploads
   const { data: allRows, error: rowsError } = await supabase
@@ -397,11 +518,19 @@ export async function recomputeOrgKpis(orgId: string): Promise<void> {
   for (const row of allRows) {
     const record = row.data as Record<string, unknown>;
     const mapping = uploadMappings.get(row.upload_id) ?? null;
+    const detMetrics = uploadDetectedMetrics.get(row.upload_id) ?? null;
+
+    const detectedDateHeader = detMetrics?.dateColumn ?? null;
     const mappedDateHeader = getMappedHeader(mapping, 'date');
 
     const isoFromRow = row.date ? toDateKey(row.date) : null;
-    const rawDerived =
-      getValueByHeaderNormalized(record, mappedDateHeader) ?? findFallbackDateValue(record);
+    let rawDerived: unknown = null;
+    if (!isoFromRow) {
+      rawDerived =
+        getValueByHeaderNormalized(record, detectedDateHeader) ??
+        getValueByHeaderNormalized(record, mappedDateHeader) ??
+        findFallbackDateValue(record);
+    }
     const isoDerived = !isoFromRow ? normalizeToISODate(rawDerived) : null;
 
     const baseDateKey = toDateKey(isoFromRow ?? isoDerived);
@@ -411,7 +540,12 @@ export async function recomputeOrgKpis(orgId: string): Promise<void> {
     const weekKey = formatISO(startOfISOWeek(parsedDate), { representation: 'date' });
     const monthKey = formatISO(startOfMonth(parsedDate), { representation: 'date' });
 
-    let metrics: SnapshotMetric = extractFromMapping(record, mapping);
+    // Metric extraction priority: detection > mapping > heuristic
+    let metrics: SnapshotMetric = {};
+    if (detMetrics) {
+      metrics = extractFromDetection(record, detMetrics);
+    }
+    if (!hasAnyMetric(metrics)) metrics = extractFromMapping(record, mapping);
     if (!hasAnyMetric(metrics)) metrics = extractUniversal(record);
     if (!hasAnyMetric(metrics)) continue;
 
