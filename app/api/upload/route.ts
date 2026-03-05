@@ -79,6 +79,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Parse detection payload EARLY — we persist it to the upload record
+    const detectionRawEarly = formData.get('detection');
+    let detectionPayload: OntologyDetection | null = null;
+    if (typeof detectionRawEarly === 'string' && detectionRawEarly.length > 0) {
+      try {
+        detectionPayload = JSON.parse(detectionRawEarly) as OntologyDetection;
+      } catch {
+        // ignore invalid detection
+      }
+    }
+
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'File is required.' }, { status: 400 });
     }
@@ -192,20 +203,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to store file.' }, { status: 500 });
     }
 
-    // Create upload record
+    // Create upload record — include detection if available
+    const uploadInsert: Record<string, unknown> = {
+      org_id: ctx.orgId,
+      uploaded_by: ctx.userId,
+      file_name: file.name,
+      file_path: objectPath,
+      file_size: file.size,
+      data_type: dataType,
+      column_mapping: columnMapping,
+      status: 'staging',
+      stream_id: streamId,
+    };
+    if (detectionPayload) {
+      uploadInsert.detection = detectionPayload;
+      uploadInsert.detection_confidence = detectionPayload.confidence ?? null;
+      uploadInsert.detection_stream_type = detectionPayload.streamType ?? 'unknown';
+      uploadInsert.detection_version = 1;
+    }
+
     const { data: uploadRecord, error: uploadError } = await ctx.supabase
       .from('uploads')
-      .insert({
-        org_id: ctx.orgId,
-        uploaded_by: ctx.userId,
-        file_name: file.name,
-        file_path: objectPath,
-        file_size: file.size,
-        data_type: dataType,
-        column_mapping: columnMapping,
-        status: 'staging',
-        stream_id: streamId,
-      })
+      .insert(uploadInsert)
       .select('id')
       .maybeSingle<{ id: string }>();
 
@@ -321,19 +340,15 @@ export async function POST(request: NextRequest) {
     let inferenceMetadataPayload: unknown = {};
     let ontologyResult: { entitiesCreated: number; relationshipsCreated: number } | undefined;
 
-    const detectionRaw = formData.get('detection');
     if (
-      typeof detectionRaw === 'string' &&
-      detectionRaw.length > 0 &&
+      detectionPayload &&
+      (detectionPayload.confidence ?? 0) > 0.3 &&
+      (detectionPayload.entityTypes?.length ?? 0) > 0 &&
       rowCount > 0
     ) {
       try {
-        let detection = JSON.parse(detectionRaw) as OntologyDetection;
-        if (
-          detection &&
-          (detection.confidence ?? 0) > 0.3 &&
-          (detection.entityTypes?.length ?? 0) > 0
-        ) {
+        let detection = detectionPayload;
+
           // Use in-memory rows directly — no DB re-read needed
           let allRows = rows
             .filter(
@@ -431,7 +446,6 @@ export async function POST(request: NextRequest) {
           } else {
             await mappingRunPromise;
           }
-        }
       } catch (detectionErr) {
         console.error('Ontology build from detection failed:', detectionErr);
       }

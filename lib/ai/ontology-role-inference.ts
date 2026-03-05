@@ -533,6 +533,7 @@ function rewriteDetection(
     metrics,
     confidence: original.confidence,
     reasoning: `Role inference engine rewrote detection: ${entityTypes.length} canonical entity types, ${relationships.length} relationships. ${systemActorUsed ? 'SystemActor (Online Checkout) included.' : ''}`,
+    streamType: original.streamType ?? 'unknown',
   };
 }
 

@@ -77,7 +77,7 @@ function isValidDetection(raw: unknown): raw is OntologyDetection {
 }
 
 function normalizeDetection(det: OntologyDetection): OntologyDetection {
-  const rawStreamType = (det as Record<string, unknown>).streamType;
+  const rawStreamType = (det as unknown as Record<string, unknown>).streamType;
   const streamType: StreamType =
     typeof rawStreamType === 'string' && VALID_STREAM_TYPES.has(rawStreamType)
       ? (rawStreamType as StreamType)

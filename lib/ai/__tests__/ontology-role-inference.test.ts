@@ -51,6 +51,7 @@ function stubDetection(): OntologyDetection {
     },
     confidence: 0.8,
     reasoning: 'AI detected User + Client entity types',
+    streamType: 'transactions_sales',
   };
 }
 
