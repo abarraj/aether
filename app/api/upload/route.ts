@@ -18,6 +18,13 @@ import { computePerformanceGaps } from '@/lib/data/performance-gaps';
 import { buildOntologyFromDetection } from '@/lib/data/ontology-builder';
 import type { OntologyDetection } from '@/lib/ai/ontology-detector';
 import {
+  isTransactionalDataset,
+  runRoleInference,
+  filterRowsForStaffEntity,
+  buildSystemActorRows,
+} from '@/lib/ai/ontology-role-inference';
+import { loadStaffRosterFromDb } from '@/lib/data/staff-roster';
+import {
   getMappedValue,
   findFallbackDateValue,
   normalizeDate,
@@ -333,6 +340,8 @@ export async function POST(request: NextRequest) {
     await runComputeJob(ctx.orgId, 'upload', uploadRecord.id);
 
     // Step 2: Build ontology (gap engine needs entity_types first)
+    // For transactional data, run the role inference engine between
+    // AI detection and ontology materialization.
     const detectionRaw = formData.get('detection');
     if (
       typeof detectionRaw === 'string' &&
@@ -340,27 +349,12 @@ export async function POST(request: NextRequest) {
       rowCount > 0
     ) {
       try {
-        const detection = JSON.parse(detectionRaw) as OntologyDetection;
+        let detection = JSON.parse(detectionRaw) as OntologyDetection;
         if (
           detection &&
           (detection.confidence ?? 0) > 0.3 &&
           (detection.entityTypes?.length ?? 0) > 0
         ) {
-          // Create mapping_run record for traceability
-          if (streamVersionId) {
-            await ctx.supabase.from('mapping_runs').insert({
-              org_id: ctx.orgId,
-              stream_version_id: streamVersionId,
-              column_mapping: columnMapping,
-              entity_mapping: detection.entityTypes ?? [],
-              overall_confidence: detection.confidence ?? 0,
-              needs_review: (detection.confidence ?? 0) < 0.7,
-              review_status: (detection.confidence ?? 0) >= 0.7 ? 'approved' : 'pending',
-              approved_by: (detection.confidence ?? 0) >= 0.7 ? ctx.userId : null,
-              approved_at: (detection.confidence ?? 0) >= 0.7 ? new Date().toISOString() : null,
-            });
-          }
-
           const { data: dataRows } = await ctx.supabase
             .from('data_rows')
             .select('data')
@@ -369,12 +363,72 @@ export async function POST(request: NextRequest) {
             .limit(300)
             .returns<{ data: Record<string, unknown> }[]>();
 
-          const allRows = (dataRows ?? [])
+          let allRows = (dataRows ?? [])
             .map((r: { data: Record<string, unknown> }) => r.data)
             .filter(
               (d: unknown): d is Record<string, unknown> =>
                 Boolean(d) && typeof d === 'object',
             );
+
+          // ── Role inference engine (transactional data only) ──────
+          const allHeaders = allRows.length > 0 ? Object.keys(allRows[0]!) : [];
+          let inferenceNeedsReview = false;
+          let inferenceReviewQuestions: unknown[] = [];
+          let inferenceMetadataPayload: unknown = {};
+
+          if (allRows.length > 0 && isTransactionalDataset(allHeaders)) {
+            // Load staff roster from DB (org-scoped)
+            const staffNames = await loadStaffRosterFromDb(ctx.orgId, ctx.supabase);
+
+            const inferenceResult = runRoleInference(
+              allRows,
+              allHeaders,
+              staffNames,
+              detection,
+            );
+
+            // Use the corrected detection (canonical entity types)
+            detection = inferenceResult.detection;
+            inferenceNeedsReview = inferenceResult.needsReview;
+            inferenceReviewQuestions = inferenceResult.reviewQuestions;
+            inferenceMetadataPayload = inferenceResult.metadata;
+
+            // Filter rows for Staff entity: blank out non-staff Users
+            const userColumn = allHeaders.find((h) => /^user$/i.test(h.trim()));
+            if (userColumn) {
+              // Build two row sets:
+              // 1. Staff-filtered rows (User column nulled for non-staff)
+              const staffFilteredRows = filterRowsForStaffEntity(
+                allRows,
+                inferenceResult.rowInferences,
+                userColumn,
+              );
+              // 2. SystemActor rows (User replaced with "Online Checkout" for self-checkout)
+              const systemActorRows = buildSystemActorRows(
+                staffFilteredRows,
+                inferenceResult.rowInferences,
+                userColumn,
+              );
+              allRows = systemActorRows;
+            }
+          }
+
+          // Create mapping_run record for traceability
+          if (streamVersionId) {
+            await ctx.supabase.from('mapping_runs').insert({
+              org_id: ctx.orgId,
+              stream_version_id: streamVersionId,
+              column_mapping: columnMapping,
+              entity_mapping: detection.entityTypes ?? [],
+              overall_confidence: detection.confidence ?? 0,
+              needs_review: inferenceNeedsReview || (detection.confidence ?? 0) < 0.7,
+              review_status: inferenceNeedsReview ? 'pending' : ((detection.confidence ?? 0) >= 0.7 ? 'approved' : 'pending'),
+              approved_by: (!inferenceNeedsReview && (detection.confidence ?? 0) >= 0.7) ? ctx.userId : null,
+              approved_at: (!inferenceNeedsReview && (detection.confidence ?? 0) >= 0.7) ? new Date().toISOString() : null,
+              review_questions: inferenceReviewQuestions,
+              inference_metadata: inferenceMetadataPayload,
+            });
+          }
 
           if (allRows.length > 0) {
             const counts = await buildOntologyFromDetection(
@@ -399,6 +453,8 @@ export async function POST(request: NextRequest) {
                 entitiesCreated: counts.entitiesCreated,
                 relationshipsCreated: counts.relationshipsCreated,
                 confidence: detection.confidence,
+                roleInference: inferenceMetadataPayload,
+                needsReview: inferenceNeedsReview,
               },
               ipAddress: getClientIp(request),
             });
