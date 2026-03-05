@@ -27,6 +27,7 @@ import {
   buildSystemActorRows,
 } from '@/lib/ai/ontology-role-inference';
 import { loadStaffRosterFromDb } from '@/lib/data/staff-roster';
+import { loadStaffNamesFromDirectory } from '@/lib/data/company-directory';
 import {
   getMappedValue,
   findFallbackDateValue,
@@ -361,7 +362,12 @@ export async function POST(request: NextRequest) {
           const allHeaders = allRows.length > 0 ? Object.keys(allRows[0]!) : [];
 
           if (allRows.length > 0 && isTransactionalDataset(allHeaders)) {
-            const staffNames = await loadStaffRosterFromDb(ctx.orgId, ctx.supabase);
+            // Load staff names from both legacy roster overrides AND Company Directory
+            const [legacyNames, directoryNames] = await Promise.all([
+              loadStaffRosterFromDb(ctx.orgId, ctx.supabase),
+              loadStaffNamesFromDirectory(ctx.orgId, ctx.supabase),
+            ]);
+            const staffNames = new Set([...legacyNames, ...directoryNames]);
 
             const inferenceResult = runRoleInference(
               allRows,
