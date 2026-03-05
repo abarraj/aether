@@ -398,7 +398,7 @@ export default function DataModelPage() {
   const handleResolveActor = useCallback(async (
     questionId: string,
     actorName: string,
-    resolution: 'staff' | 'client' | 'system' | 'ignore',
+    resolution: 'staff' | 'client' | 'ignore',
   ) => {
     if (!pendingReview) return;
     setResolvingId(questionId);
@@ -417,13 +417,15 @@ export default function DataModelPage() {
         setResolvedIds((prev) => new Set([...prev, questionId]));
         setSelectedReviewItem(null);
         toast.success(`Confirmed "${actorName}" as ${resolution}`);
-        // If all resolved, close panel
+        // If all resolved, close panel and reload to refetch entities
         const remaining = pendingReview.questions.filter(
           (q) => q.id !== questionId && !resolvedIds.has(q.id),
         );
         if (remaining.length === 0) {
           setReviewPanelOpen(false);
           setPendingReview(null);
+          // Reload page so entity cards reflect the resolution
+          window.location.reload();
         }
       } else {
         toast.error('Failed to save resolution');
@@ -994,7 +996,7 @@ export default function DataModelPage() {
 
                     {isSelected && (
                       <div className="mt-3 pt-3 border-t border-zinc-800 flex flex-wrap gap-2">
-                        {(['staff', 'client', 'system', 'ignore'] as const).map((res) => (
+                        {(['staff', 'client', 'ignore'] as const).map((res) => (
                           <button
                             key={res}
                             type="button"
@@ -1009,9 +1011,7 @@ export default function DataModelPage() {
                                 ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
                                 : res === 'client'
                                   ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20'
-                                  : res === 'system'
-                                    ? 'bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20'
-                                    : 'bg-zinc-800 border border-zinc-700 text-slate-400 hover:bg-zinc-700',
+                                  : 'bg-zinc-800 border border-zinc-700 text-slate-400 hover:bg-zinc-700',
                             )}
                           >
                             {resolvingId === q.id ? '...' : `Confirm as ${res.charAt(0).toUpperCase() + res.slice(1)}`}
@@ -1092,7 +1092,7 @@ export default function DataModelPage() {
           ) : (
             <>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-                {entityTypes.map((et, index) => {
+                {entityTypes.filter((et) => entities.some((e) => e.entity_type_id === et.id)).map((et, index) => {
                   const IconComponent = ICON_MAP[et.icon?.toLowerCase()] ?? Circle;
                   const typeEntities = entities.filter((e) => e.entity_type_id === et.id);
                   const metrics = typeEntities

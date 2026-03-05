@@ -27,6 +27,68 @@ function toNumber(v: unknown): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+// ── Garbage entity value filter ─────────────────────────────────────────
+
+/**
+ * Reject values that should never become entities.
+ * Catches aggregate rows (GRAND TOTAL, SUBTOTAL), currency-only
+ * values ("$5,000", "Base $5,000"), empty/numeric-only strings, etc.
+ */
+const GARBAGE_EXACT = new Set([
+  'grand total',
+  'total',
+  'subtotal',
+  'sub total',
+  'sub-total',
+  'net total',
+  'gross total',
+  'sum',
+  'average',
+  'avg',
+  'count',
+  'n/a',
+  'na',
+  'none',
+  'null',
+  'undefined',
+  'unknown',
+  'other',
+  'misc',
+  'miscellaneous',
+  'various',
+  'test',
+  'sample',
+  'example',
+  'deleted',
+  'void',
+  'voided',
+  'cancelled',
+  'refund',
+  'adjustment',
+]);
+
+const GARBAGE_PATTERNS = [
+  // Currency-only values: "$5,000", "Base $5,000", "AED 1,234.56"
+  /^\s*(?:base\s+)?[A-Z]{0,3}\s*[\$€£¥₹]\s*[\d,]+(?:\.\d+)?\s*$/i,
+  /^\s*[\$€£¥₹]\s*[\d,]+(?:\.\d+)?\s*$/i,
+  // Numeric-only values
+  /^\s*[\d,]+(?:\.\d+)?\s*$/,
+  // Percentage values
+  /^\s*[\d.]+\s*%\s*$/,
+  // Very short values (1-2 chars) that are not meaningful entity names
+  /^.{1,2}$/,
+];
+
+function isGarbageEntityValue(val: string): boolean {
+  const lower = val.trim().toLowerCase();
+  if (!lower) return true;
+  if (GARBAGE_EXACT.has(lower)) return true;
+  for (const pattern of GARBAGE_PATTERNS) {
+    if (pattern.test(val.trim())) return true;
+  }
+  return false;
+}
+
 export async function buildOntologyFromDetection(
   orgId: string,
   uploadId: string,
@@ -110,6 +172,8 @@ export async function buildOntologyFromDetection(
     }
 
     for (const [entityName, entityRows] of valueToRows) {
+      // Skip garbage values that should never become entities
+      if (isGarbageEntityValue(entityName)) continue;
       const props: Record<string, number> = {};
       for (const prop of et.aggregatedProperties) {
         const col = prop.sourceColumn;

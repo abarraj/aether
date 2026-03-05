@@ -156,5 +156,97 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ success: true, resolution: body.resolution });
+  // ── Entity rebuild after resolution ──────────────────────────────────
+  // Move the actor between entity types so the UI reflects the change
+  // immediately without waiting for a full re-upload.
+  try {
+    const actorDisplay = body.actorName.trim();
+
+    // Find entity types for staff and client
+    const { data: entityTypes } = await supabase
+      .from('entity_types')
+      .select('id, slug')
+      .eq('org_id', orgId)
+      .in('slug', ['staff', 'client']);
+
+    const staffTypeId = (entityTypes ?? []).find((et: { slug: string }) => et.slug === 'staff')?.id;
+    const clientTypeId = (entityTypes ?? []).find((et: { slug: string }) => et.slug === 'client')?.id;
+
+    if (body.resolution === 'staff' && staffTypeId) {
+      // Remove from client entity type if present
+      if (clientTypeId) {
+        await supabase
+          .from('entities')
+          .delete()
+          .eq('org_id', orgId)
+          .eq('entity_type_id', clientTypeId)
+          .ilike('name', actorDisplay);
+      }
+
+      // Ensure entity exists in staff entity type
+      const { data: existingStaff } = await supabase
+        .from('entities')
+        .select('id')
+        .eq('org_id', orgId)
+        .eq('entity_type_id', staffTypeId)
+        .ilike('name', actorDisplay)
+        .maybeSingle();
+
+      if (!existingStaff) {
+        await supabase
+          .from('entities')
+          .insert({
+            org_id: orgId,
+            entity_type_id: staffTypeId,
+            name: actorDisplay,
+            properties: {},
+          });
+      }
+    } else if (body.resolution === 'client' && clientTypeId) {
+      // Remove from staff entity type if present
+      if (staffTypeId) {
+        await supabase
+          .from('entities')
+          .delete()
+          .eq('org_id', orgId)
+          .eq('entity_type_id', staffTypeId)
+          .ilike('name', actorDisplay);
+      }
+
+      // Ensure entity exists in client entity type
+      const { data: existingClient } = await supabase
+        .from('entities')
+        .select('id')
+        .eq('org_id', orgId)
+        .eq('entity_type_id', clientTypeId)
+        .ilike('name', actorDisplay)
+        .maybeSingle();
+
+      if (!existingClient) {
+        await supabase
+          .from('entities')
+          .insert({
+            org_id: orgId,
+            entity_type_id: clientTypeId,
+            name: actorDisplay,
+            properties: {},
+          });
+      }
+    } else if (body.resolution === 'ignore') {
+      // Remove from staff entity type
+      if (staffTypeId) {
+        await supabase
+          .from('entities')
+          .delete()
+          .eq('org_id', orgId)
+          .eq('entity_type_id', staffTypeId)
+          .ilike('name', actorDisplay);
+      }
+    }
+  } catch (entityErr) {
+    // Non-fatal: resolution was saved, entity rebuild is best-effort
+    console.error('[review] Entity rebuild after resolution failed:', entityErr);
+  }
+
+  return NextResponse.json({ success: true, resolution: body.resolution, entitiesUpdated: true });
 }
