@@ -32,12 +32,23 @@ export interface DetectedMetrics {
   utilizationColumns: string[];
 }
 
+export type StreamType =
+  | 'transactions_sales'
+  | 'staff_roster'
+  | 'client_roster'
+  | 'inventory'
+  | 'schedule'
+  | 'unknown';
+
 export interface OntologyDetection {
   entityTypes: DetectedEntityType[];
   relationships: DetectedRelationship[];
   metrics: DetectedMetrics;
   confidence: number;
   reasoning: string;
+  streamType: StreamType;
+  /** A single, simple clarifying question when confidence < 0.5. */
+  clarifyingQuestion?: string;
 }
 
 const ALLOWED_ICONS = new Set([
@@ -50,6 +61,10 @@ const ALLOWED_COLORS = [
   '#10B981', '#06B6D4', '#F59E0B', '#F43F5E', '#8B5CF6', '#64748B',
 ];
 
+const VALID_STREAM_TYPES = new Set<string>([
+  'transactions_sales', 'staff_roster', 'client_roster', 'inventory', 'schedule', 'unknown',
+]);
+
 function isValidDetection(raw: unknown): raw is OntologyDetection {
   if (!raw || typeof raw !== 'object') return false;
   const o = raw as Record<string, unknown>;
@@ -57,12 +72,24 @@ function isValidDetection(raw: unknown): raw is OntologyDetection {
   if (typeof o.confidence !== 'number' || o.confidence < 0 || o.confidence > 1) return false;
   if (typeof o.reasoning !== 'string') return false;
   if (!o.metrics || typeof o.metrics !== 'object') return false;
+  // streamType is required in schema but tolerated if missing (we default to 'unknown')
   return true;
 }
 
 function normalizeDetection(det: OntologyDetection): OntologyDetection {
+  const rawStreamType = (det as Record<string, unknown>).streamType;
+  const streamType: StreamType =
+    typeof rawStreamType === 'string' && VALID_STREAM_TYPES.has(rawStreamType)
+      ? (rawStreamType as StreamType)
+      : 'unknown';
+
   return {
     ...det,
+    streamType,
+    clarifyingQuestion:
+      det.confidence < 0.5 && typeof det.clarifyingQuestion === 'string'
+        ? det.clarifyingQuestion
+        : undefined,
     entityTypes: (det.entityTypes ?? []).map((et) => ({
       ...et,
       icon: ALLOWED_ICONS.has(et.icon?.toLowerCase()) ? et.icon.toLowerCase() : 'circle',
@@ -148,9 +175,20 @@ export function computeColumnStatistics(
 
 const SYSTEM_PROMPT = `You are Aether's data intelligence engine. You analyze business operational data to understand the structure of a business — its people, places, products, and how they connect.
 
-You think like a management consultant who's been handed a spreadsheet and needs to understand the business in 30 seconds. You look for:
+You think like a management consultant who's been handed a spreadsheet and needs to understand the business in 30 seconds.
 
-1. ENTITIES: Columns with repeating categorical values that represent real-world things — people (employees, instructors, managers), places (locations, branches, studios), categories (class types, product lines, departments), time slots, etc.
+STEP 0 — CLASSIFY THE FILE (streamType):
+Before anything else, determine what kind of data this file contains:
+- "transactions_sales" — rows represent sales, invoices, payments, bookings, orders. Has monetary amounts and usually dates.
+- "staff_roster" — a list of employees, instructors, coaches, staff members. May have NO revenue columns at all. Columns like INSTRUCTORS, Employee Name, Staff are strong signals.
+- "client_roster" — a list of clients, customers, members. May have NO revenue columns.
+- "inventory" — product/item lists with quantities, SKUs, prices.
+- "schedule" — class schedules, shift schedules, appointment slots. Has time slots and day/date columns.
+- "unknown" — if you genuinely can't tell.
+
+CRITICAL: Not every file has revenue. A staff list is valid data. A schedule is valid data. Do NOT require monetary columns.
+
+STEP 1 — ENTITIES: Columns with repeating categorical values that represent real-world things — people (employees, instructors, managers), places (locations, branches, studios), categories (class types, product lines, departments), time slots, etc.
 
    NOT entities: dates, numeric values, IDs, boolean flags, notes/descriptions.
 
@@ -159,27 +197,30 @@ You think like a management consultant who's been handed a spreadsheet and needs
    - The values are proper nouns or categorical labels
    - Multiple numeric columns could be "about" this entity
 
+   For staff_roster / client_roster files: the name column IS an entity (Person type) even if every value is unique, because the PURPOSE is to enumerate people.
+
    When choosing aggregation methods, think about what makes business sense:
    - Revenue, costs, sales → use 'sum' (totals make sense)
-   - Rates, percentages, ratios → use 'average' (averaging averages is usually wrong, but it's the best default)
-   - Counts of people, items, sessions → use 'sum' for totals, 'average' ONLY when the label implies per-unit measurement
-   - Class size, group size, party size → use 'average' but ONLY if the column represents individual session sizes. If it represents total attendance, use 'sum' instead.
-   - Be conservative with averages. If a column called 'attendance' has values like 30, 45, 50, those are likely per-session counts that should be SUMMED for the total, not averaged.
-   - When creating property labels, make them precise: 'Total Revenue' not just 'Revenue', 'Avg Revenue per Session' not 'Revenue Average'.
+   - Rates, percentages, ratios → use 'average'
+   - Counts of people, items, sessions → use 'sum' for totals, 'average' ONLY when per-unit
+   - Be conservative with averages. If a column called 'attendance' has values like 30, 45, 50, those are likely per-session counts that should be SUMMED.
+   - When creating property labels, make them precise: 'Total Revenue' not just 'Revenue'.
 
-2. PROPERTIES: For each entity, which numeric columns describe it? Revenue per instructor, cost per location, attendance per class type. These become aggregated properties that give each entity its business meaning.
+STEP 2 — PROPERTIES: For each entity, which numeric columns describe it?
 
-3. RELATIONSHIPS: If two entity columns appear in the same row, the entities in those columns have a relationship. An instructor column and a location column in the same row means instructors work at locations.
+STEP 3 — RELATIONSHIPS: If two entity columns appear in the same row, they have a relationship.
 
    IMPORTANT — Transaction role semantics:
-   - If data has buyer/seller, payer/payee, from/to, sender/receiver columns, treat each role as a SEPARATE entity type even if the values overlap
-   - Example: "Buyer" and "Seller" columns should become distinct entity types (buyer, seller), NOT merged into a single "party" type
-   - Name the relationship directionally: buyer "purchased_from" seller, payer "paid" payee
-   - NEVER create a relationship where fromTypeSlug === toTypeSlug from the SAME column (self-referencing)
+   - If data has buyer/seller, payer/payee, from/to, sender/receiver columns, treat each role as a SEPARATE entity type
+   - NEVER create a relationship where fromTypeSlug === toTypeSlug from the SAME column
 
-4. METRICS: Which columns are the core business metrics? Identify date columns, revenue columns, cost columns, attendance/volume columns.
+STEP 4 — METRICS: Identify date columns, revenue columns, cost columns, attendance/volume columns.
+   - For staff_roster / client_roster / schedule files: metrics.revenueColumns MAY be empty []. That's fine.
+   - For transactions_sales: the "Total" column is the authoritative net amount paid.
 
-Be conservative. Only detect clear, obvious entity types. A column with 100 unique values out of 100 rows is NOT an entity — it's an identifier. A column with 3-30 unique values out of 100+ rows IS likely an entity.
+STEP 5 — CLARIFYING QUESTION: If your overall confidence is below 0.5, include ONE simple clarifying question that a business user could answer in one sentence.
+
+Be conservative. Only detect clear, obvious entity types. A column with 100 unique values out of 100 rows is NOT an entity — it's an identifier. Exception: roster files where the purpose IS the list of names.
 
 Respond ONLY with valid JSON. No markdown. No backticks. No explanation outside the JSON structure.`;
 
@@ -210,6 +251,7 @@ Total rows in dataset: ${totalRows}
 
 Return this exact JSON structure:
 {
+  "streamType": "transactions_sales | staff_roster | client_roster | inventory | schedule | unknown",
   "entityTypes": [
     {
       "name": "Human readable name",
@@ -236,15 +278,20 @@ Return this exact JSON structure:
     }
   ],
   "metrics": {
-    "dateColumn": "date",
-    "revenueColumns": ["revenue"],
-    "costColumns": ["labor_cost"],
-    "attendanceColumns": ["attendance"],
+    "dateColumn": "date_column_name_or_null",
+    "revenueColumns": ["revenue_col_or_empty_array"],
+    "costColumns": ["cost_col_or_empty_array"],
+    "attendanceColumns": ["attendance_col_or_empty_array"],
     "utilizationColumns": []
   },
   "confidence": 0.85,
-  "reasoning": "Brief explanation of what was detected and why"
+  "reasoning": "Brief explanation of what was detected and why",
+  "clarifyingQuestion": "Only if confidence < 0.5: a single simple question"
 }
+
+streamType is REQUIRED. Pick the best match. Use "unknown" only as last resort.
+For staff_roster files: revenueColumns=[], dateColumn=null is fine. Still detect entity types (Person).
+clarifyingQuestion is optional — only include if confidence < 0.5.
 
 Icon must be one of: user, building2, mappin, package, dollarsign, calendar, briefcase, graduationcap, heart, truck, shoppingcart, coffee, dumbbell, music, wrench, zap, star, tag, clock, barchart3
 
@@ -263,6 +310,7 @@ const FALLBACK_DETECTION: OntologyDetection = {
   },
   confidence: 0,
   reasoning: 'Could not analyze this dataset automatically.',
+  streamType: 'unknown',
 };
 
 function extractJsonFromText(text: string): string | null {
