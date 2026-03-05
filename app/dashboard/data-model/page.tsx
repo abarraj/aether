@@ -333,6 +333,10 @@ export default function DataModelPage() {
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [createEntityTypeOpen, setCreateEntityTypeOpen] = useState(false);
   const [createRelationshipOpen, setCreateRelationshipOpen] = useState(false);
+  // ── Relationships toggle + filter ─────────────────────────────
+  const [relationshipsVisible, setRelationshipsVisible] = useState(false);
+  const [relationshipTypeFilter, setRelationshipTypeFilter] = useState<string>('all');
+  const [relationshipSearch, setRelationshipSearch] = useState('');
   const [expandedTableRow, setExpandedTableRow] = useState<string | null>(null);
   const [uploadNames, setUploadNames] = useState<Record<string, string>>({});
   const [deleteTypeModalOpen, setDeleteTypeModalOpen] = useState(false);
@@ -365,6 +369,12 @@ export default function DataModelPage() {
     questions: { id: string; type: string; question: string; suggestion: string; confidence: number; affectedRows: number }[];
   } | null>(null);
   const [reviewDismissed, setReviewDismissed] = useState(false);
+  const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
+  const [selectedReviewItem, setSelectedReviewItem] = useState<{
+    id: string; type: string; question: string; suggestion: string; confidence: number; affectedRows: number;
+  } | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const supabase = createClient();
@@ -383,7 +393,47 @@ export default function DataModelPage() {
           });
         }
       });
-  }, [entities.length]); // re-fetch when entities change (after upload)
+  }, [entities.length]);
+
+  const handleResolveActor = useCallback(async (
+    questionId: string,
+    actorName: string,
+    resolution: 'staff' | 'client' | 'system' | 'ignore',
+  ) => {
+    if (!pendingReview) return;
+    setResolvingId(questionId);
+    try {
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mappingRunId: pendingReview.mappingRunId,
+          questionId,
+          actorName,
+          resolution,
+        }),
+      });
+      if (res.ok) {
+        setResolvedIds((prev) => new Set([...prev, questionId]));
+        setSelectedReviewItem(null);
+        toast.success(`Confirmed "${actorName}" as ${resolution}`);
+        // If all resolved, close panel
+        const remaining = pendingReview.questions.filter(
+          (q) => q.id !== questionId && !resolvedIds.has(q.id),
+        );
+        if (remaining.length === 0) {
+          setReviewPanelOpen(false);
+          setPendingReview(null);
+        }
+      } else {
+        toast.error('Failed to save resolution');
+      }
+    } catch {
+      toast.error('Failed to save resolution');
+    } finally {
+      setResolvingId(null);
+    }
+  }, [pendingReview, resolvedIds]);
 
   // ── Graph interaction state ─────────────────────────────────────────
   const { org } = useUser();
@@ -810,16 +860,20 @@ export default function DataModelPage() {
         </button>
       </div>
 
-      {/* Review banner — shown when role inference flagged ambiguity */}
+      {/* Review banner — clickable items open resolution panel */}
       {pendingReview && !reviewDismissed && (
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-5 py-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
             <div className="flex-1">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium text-amber-300">
-                  Review needed
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setReviewPanelOpen(true)}
+                  className="text-sm font-medium text-amber-300 hover:text-amber-200 transition-colors"
+                >
+                  Review needed — {pendingReview.questions.filter((q) => !resolvedIds.has(q.id)).length} items
+                </button>
                 <button
                   type="button"
                   onClick={() => setReviewDismissed(true)}
@@ -829,8 +883,19 @@ export default function DataModelPage() {
                 </button>
               </div>
               <div className="mt-1.5 space-y-1.5">
-                {pendingReview.questions.slice(0, 3).map((q) => (
-                  <div key={q.id} className="flex items-start gap-2 text-xs text-slate-400">
+                {pendingReview.questions
+                  .filter((q) => !resolvedIds.has(q.id))
+                  .slice(0, 3)
+                  .map((q) => (
+                  <button
+                    key={q.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedReviewItem(q);
+                      setReviewPanelOpen(true);
+                    }}
+                    className="flex items-start gap-2 text-xs text-slate-400 hover:text-slate-200 transition-colors text-left w-full"
+                  >
                     <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500/60" />
                     <span>
                       {q.question}
@@ -839,17 +904,135 @@ export default function DataModelPage() {
                       )}
                       <span className="ml-1.5 text-slate-500">({q.affectedRows} rows)</span>
                     </span>
-                  </div>
+                  </button>
                 ))}
-                {pendingReview.questions.length > 3 && (
-                  <p className="text-xs text-slate-500">
-                    +{pendingReview.questions.length - 3} more items
-                  </p>
+                {pendingReview.questions.filter((q) => !resolvedIds.has(q.id)).length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setReviewPanelOpen(true)}
+                    className="text-xs text-amber-400 hover:text-amber-300"
+                  >
+                    +{pendingReview.questions.filter((q) => !resolvedIds.has(q.id)).length - 3} more — click to resolve
+                  </button>
                 )}
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Review resolution side panel */}
+      {reviewPanelOpen && pendingReview && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+            onClick={() => { setReviewPanelOpen(false); setSelectedReviewItem(null); }}
+            aria-hidden="true"
+          />
+          <div className="fixed right-0 top-0 z-50 flex h-full w-full flex-col border-l border-zinc-800 bg-[#0A0A0A] shadow-2xl lg:w-[520px]">
+            <div className="flex items-center justify-between border-b border-zinc-800 p-4">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight text-slate-100">
+                  Resolve Review Items
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {pendingReview.questions.filter((q) => !resolvedIds.has(q.id)).length} items remaining
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setReviewPanelOpen(false); setSelectedReviewItem(null); }}
+                className="rounded-lg p-2 text-slate-400 hover:bg-zinc-800 hover:text-slate-200"
+                aria-label="Close"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {pendingReview.questions
+                .filter((q) => !resolvedIds.has(q.id))
+                .map((q) => {
+                // Extract actor name from question text
+                const nameMatch = /['"]([^'"]+)['"]/.exec(q.question);
+                const actorName = nameMatch?.[1] ?? q.id.replace('unknown_actor_', '');
+
+                const isSelected = selectedReviewItem?.id === q.id;
+                return (
+                  <div
+                    key={q.id}
+                    className={cn(
+                      'rounded-xl border p-4 transition-colors cursor-pointer',
+                      isSelected
+                        ? 'border-amber-500/40 bg-amber-500/5'
+                        : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-700',
+                    )}
+                    onClick={() => setSelectedReviewItem(q)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-slate-100">
+                            {actorName}
+                          </span>
+                          <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                            {q.type === 'unknown_actor' ? 'Unknown Actor' : q.type.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-400">{q.question}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          {q.affectedRows} rows affected · {Math.round(q.confidence * 100)}% confidence
+                        </p>
+                        {q.suggestion && (
+                          <p className="mt-0.5 text-[11px] text-amber-400/70">
+                            AI suggests: {q.suggestion}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {isSelected && (
+                      <div className="mt-3 pt-3 border-t border-zinc-800 flex flex-wrap gap-2">
+                        {(['staff', 'client', 'system', 'ignore'] as const).map((res) => (
+                          <button
+                            key={res}
+                            type="button"
+                            disabled={resolvingId === q.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleResolveActor(q.id, actorName, res);
+                            }}
+                            className={cn(
+                              'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50',
+                              res === 'staff'
+                                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
+                                : res === 'client'
+                                  ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20'
+                                  : res === 'system'
+                                    ? 'bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20'
+                                    : 'bg-zinc-800 border border-zinc-700 text-slate-400 hover:bg-zinc-700',
+                            )}
+                          >
+                            {resolvingId === q.id ? '...' : `Confirm as ${res.charAt(0).toUpperCase() + res.slice(1)}`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {pendingReview.questions.filter((q) => !resolvedIds.has(q.id)).length === 0 && (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Check className="h-8 w-8 text-emerald-400 mb-3" />
+                  <p className="text-sm font-medium text-slate-200">All items resolved</p>
+                  <p className="mt-1 text-xs text-slate-500">No more review items pending.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       {entityTypes.length > 0 &&
@@ -1090,75 +1273,129 @@ export default function DataModelPage() {
               </div>
               {relationshipGroups.length > 0 && (
                 <div>
-                  <h3 className="mb-3 text-sm font-medium text-slate-300">
-                    How things connect
-                  </h3>
-                  <div className="space-y-3">
-                    {relationshipGroups.map((group) => {
-                      const relExpanded = expandedCards.has(`rel:${group.type.id}`);
-                      const visible = relExpanded ? group.items : group.items.slice(0, 5);
-                      const extra = relExpanded ? 0 : group.items.length - visible.length;
-                      return (
-                        <div key={group.type.id} className="space-y-1.5">
-                          <div className="text-xs font-medium text-slate-400">
-                            {group.type.name.replace(/_/g, ' ')} ({group.items.length})
-                          </div>
-                          <div className="space-y-1.5">
-                            {visible.map((item, idx) => (
-                              <div
-                                key={`${item.from}-${item.to}-${idx}`}
-                                className="flex flex-wrap items-center gap-2"
-                              >
-                                <span className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-slate-200">
-                                  {item.from}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <div className="h-px w-4 bg-zinc-600" />
-                                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-slate-400 font-medium whitespace-nowrap">
-                                    {group.type.name.replace(/_/g, ' ')}
-                                  </span>
-                                  <div className="h-px w-4 bg-zinc-600" />
-                                </span>
-                                <span className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-slate-200">
-                                  {item.to}
-                                </span>
-                              </div>
-                            ))}
-                            {extra > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setExpandedCards((prev) => {
-                                    const next = new Set(prev);
-                                    next.add(`rel:${group.type.id}`);
-                                    return next;
-                                  });
-                                }}
-                                className="text-xs text-slate-500 hover:text-slate-300"
-                              >
-                                + {extra} more
-                              </button>
-                            )}
-                            {relExpanded && group.items.length > 5 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setExpandedCards((prev) => {
-                                    const next = new Set(prev);
-                                    next.delete(`rel:${group.type.id}`);
-                                    return next;
-                                  });
-                                }}
-                                className="text-xs text-slate-500 hover:text-slate-300"
-                              >
-                                Show less
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="flex items-center gap-3 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setRelationshipsVisible((v) => !v)}
+                      className="flex items-center gap-2 text-sm font-medium text-slate-300 hover:text-slate-100 transition-colors"
+                    >
+                      {relationshipsVisible ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                      <Link2 className="h-4 w-4" />
+                      Relationships
+                      <span className="text-xs text-slate-500 font-normal">
+                        ({relationships.length})
+                      </span>
+                    </button>
                   </div>
+
+                  {relationshipsVisible && (
+                    <div className="space-y-3">
+                      {/* Filters row */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <select
+                          value={relationshipTypeFilter}
+                          onChange={(e) => setRelationshipTypeFilter(e.target.value)}
+                          className="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-emerald-500/40"
+                        >
+                          <option value="all">All types</option>
+                          {relationshipGroups.map((g) => (
+                            <option key={g.type.id} value={g.type.id}>
+                              {g.type.name.replace(/_/g, ' ')} ({g.items.length})
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Search entities…"
+                          value={relationshipSearch}
+                          onChange={(e) => setRelationshipSearch(e.target.value)}
+                          className="flex-1 min-w-[140px] rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-slate-300 placeholder-slate-600 outline-none focus:border-emerald-500/40"
+                        />
+                      </div>
+
+                      {relationshipGroups
+                        .filter((g) => relationshipTypeFilter === 'all' || g.type.id === relationshipTypeFilter)
+                        .map((group) => {
+                          const searchLower = relationshipSearch.toLowerCase();
+                          const filteredItems = searchLower
+                            ? group.items.filter(
+                                (item) =>
+                                  item.from.toLowerCase().includes(searchLower) ||
+                                  item.to.toLowerCase().includes(searchLower),
+                              )
+                            : group.items;
+
+                          if (filteredItems.length === 0) return null;
+
+                          const relExpanded = expandedCards.has(`rel:${group.type.id}`);
+                          const visible = relExpanded ? filteredItems : filteredItems.slice(0, 5);
+                          const extra = relExpanded ? 0 : filteredItems.length - visible.length;
+                          return (
+                            <div key={group.type.id} className="space-y-1.5">
+                              <div className="text-xs font-medium text-slate-400">
+                                {group.type.name.replace(/_/g, ' ')} ({filteredItems.length})
+                              </div>
+                              <div className="space-y-1.5">
+                                {visible.map((item, idx) => (
+                                  <div
+                                    key={`${item.from}-${item.to}-${idx}`}
+                                    className="flex flex-wrap items-center gap-2"
+                                  >
+                                    <span className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-slate-200">
+                                      {item.from}
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <div className="h-px w-4 bg-zinc-600" />
+                                      <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-slate-400 font-medium whitespace-nowrap">
+                                        {group.type.name.replace(/_/g, ' ')}
+                                      </span>
+                                      <div className="h-px w-4 bg-zinc-600" />
+                                    </span>
+                                    <span className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-slate-200">
+                                      {item.to}
+                                    </span>
+                                  </div>
+                                ))}
+                                {extra > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setExpandedCards((prev) => {
+                                        const next = new Set(prev);
+                                        next.add(`rel:${group.type.id}`);
+                                        return next;
+                                      });
+                                    }}
+                                    className="text-xs text-slate-500 hover:text-slate-300"
+                                  >
+                                    + {extra} more
+                                  </button>
+                                )}
+                                {relExpanded && filteredItems.length > 5 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setExpandedCards((prev) => {
+                                        const next = new Set(prev);
+                                        next.delete(`rel:${group.type.id}`);
+                                        return next;
+                                      });
+                                    }}
+                                    className="text-xs text-slate-500 hover:text-slate-300"
+                                  >
+                                    Show less
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
               )}
             </>

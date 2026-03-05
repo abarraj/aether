@@ -2,15 +2,21 @@
 // Supports single-upload processing and full org-level recompute
 // across multiple active data streams.
 //
-// PRIORITY: AI detection > user column_mapping > hardcoded heuristics.
+// PRIORITY: TransactionFacts (for sales) > AI detection > user column_mapping > hardcoded heuristics.
 // Non-metric stream types (staff_roster, client_roster, schedule) skip
 // KPI generation gracefully — rows are kept for ontology, not for KPIs.
 
-import { parseISO, startOfDay, startOfISOWeek, startOfMonth, formatISO } from 'date-fns';
+import { startOfISOWeek, startOfMonth, formatISO, parseISO } from 'date-fns';
 
 import { createClient } from '@/lib/supabase/server';
 import { normalizeColumnMapping } from '@/lib/data/normalize-column-mapping';
 import type { DetectedMetrics, StreamType } from '@/lib/ai/ontology-detector';
+import {
+  buildTransactionFacts,
+  parseDate,
+  detectDateFormat,
+  parseNumeric as txParseNumeric,
+} from '@/lib/data/transaction-facts';
 
 type DataRow = {
   date: string | null;
@@ -50,25 +56,7 @@ function normKey(v: string): string {
 }
 
 function parseNumeric(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    let cleaned = value.trim();
-    if (!cleaned) return null;
-    // Parenthetical negatives: (500) => -500
-    const parenMatch = /^\(([0-9.,]+)\)$/.exec(cleaned);
-    if (parenMatch) {
-      cleaned = `-${parenMatch[1]}`;
-    }
-    // Strip currency symbols ($, €, £), commas, whitespace
-    cleaned = cleaned.replace(/[$€£,\s]/g, '');
-    // Strip trailing percent sign: "12%" => 12
-    cleaned = cleaned.replace(/%$/, '');
-    if (!cleaned) return null;
-    const n = Number(cleaned);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
+  return txParseNumeric(value);
 }
 
 /**
@@ -78,15 +66,12 @@ function parseNumeric(value: unknown): number | null {
 function resolveHeader(detected: string, actualHeaders: string[]): string | null {
   if (!detected) return null;
   const dNorm = normKey(detected).replace(/_/g, ' ');
-  // 1. Exact normalized match (case-insensitive, whitespace-normalized)
   for (const h of actualHeaders) {
     if (normKey(h) === dNorm) return h;
   }
-  // 2. Underscore/space equivalence
   for (const h of actualHeaders) {
     if (normKey(h).replace(/_/g, ' ') === dNorm) return h;
   }
-  // 3. Containment: detected is substring of actual or vice versa
   for (const h of actualHeaders) {
     const hNorm = normKey(h).replace(/_/g, ' ');
     if (hNorm.includes(dNorm) || dNorm.includes(hNorm)) return h;
@@ -94,10 +79,6 @@ function resolveHeader(detected: string, actualHeaders: string[]): string | null
   return null;
 }
 
-/**
- * Resolve an array of AI-detected column names to actual headers.
- * Returns only successfully resolved headers.
- */
 function resolveDetectedColumns(detected: string[], actualHeaders: string[]): string[] {
   const resolved: string[] = [];
   for (const d of detected) {
@@ -107,14 +88,25 @@ function resolveDetectedColumns(detected: string[], actualHeaders: string[]): st
   return resolved;
 }
 
+/**
+ * Robust date normalization using the transaction-facts parser.
+ * Replaces the old `normalizeToISODate` which used `new Date()` and failed
+ * on DD/MM/YYYY dates like "28/02/2026 18:02:58".
+ */
+function robustNormalizeDate(raw: unknown, dayFirst = true): string | null {
+  const d = parseDate(raw, dayFirst);
+  if (!d) return null;
+  return d.toISOString().slice(0, 10);
+}
+
 function toDateKey(raw: string | null): string | null {
   if (!raw) return null;
-  try {
-    const date = startOfDay(parseISO(raw));
-    return formatISO(date, { representation: 'date' });
-  } catch {
-    return null;
+  // First try ISO parse (YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return raw.slice(0, 10);
   }
+  // Fallback: robust parse
+  return robustNormalizeDate(raw);
 }
 
 function getMappedHeader(mapping: Record<string, string> | null, role: string): string | null {
@@ -137,15 +129,8 @@ function getValueByHeaderNormalized(record: Record<string, unknown>, header: str
 function findFallbackDateValue(record: Record<string, unknown>): unknown {
   const keys = Object.keys(record);
   const priority = [
-    'week_start',
-    'week start',
-    'period_start',
-    'period start',
-    'start_date',
-    'start date',
-    'date',
-    'time',
-    'timestamp',
+    'week_start', 'week start', 'period_start', 'period start',
+    'start_date', 'start date', 'date', 'time', 'timestamp',
   ];
 
   for (const want of priority) {
@@ -155,22 +140,9 @@ function findFallbackDateValue(record: Record<string, unknown>): unknown {
 
   const loose = keys.find((k) => {
     const nk = normKey(k);
-    return (
-      nk.includes('week_start') ||
-      nk.includes('period_start') ||
-      nk.includes('start_date') ||
-      nk.includes('date') ||
-      nk.includes('time')
-    );
+    return nk.includes('date') || nk.includes('time');
   });
   return loose ? record[loose] : null;
-}
-
-function normalizeToISODate(raw: unknown): string | null {
-  if (raw === null || raw === undefined) return null;
-  const d = new Date(String(raw));
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
 }
 
 // ── Metric Extraction ───────────────────────────────────────────
@@ -200,40 +172,27 @@ function getByKeys(map: Record<string, unknown>, keys: string[]): number | undef
   return undefined;
 }
 
-/**
- * NEW: Extract metrics using AI-detected column names.
- * This is the FIRST priority — before user mapping and hardcoded keys.
- */
 function extractFromDetection(
   record: Record<string, unknown>,
   detectedMetrics: DetectedMetrics,
 ): SnapshotMetric {
   const metrics: SnapshotMetric = {};
-
-  // Revenue: sum all AI-detected revenue columns
   for (const col of detectedMetrics.revenueColumns) {
     const n = parseNumeric(getValueByHeaderNormalized(record, col));
     if (n !== null) metrics.revenue = (metrics.revenue ?? 0) + n;
   }
-
-  // Cost: sum all AI-detected cost columns
   for (const col of detectedMetrics.costColumns) {
     const n = parseNumeric(getValueByHeaderNormalized(record, col));
     if (n !== null) metrics.laborCost = (metrics.laborCost ?? 0) + n;
   }
-
-  // Attendance: sum all AI-detected attendance columns
   for (const col of detectedMetrics.attendanceColumns) {
     const n = parseNumeric(getValueByHeaderNormalized(record, col));
     if (n !== null) metrics.attendance = (metrics.attendance ?? 0) + n;
   }
-
-  // Utilization: average all AI-detected utilization columns
   for (const col of detectedMetrics.utilizationColumns) {
     const n = parseNumeric(getValueByHeaderNormalized(record, col));
     if (n !== null) metrics.utilization = (metrics.utilization ?? 0) + n;
   }
-
   return metrics;
 }
 
@@ -291,18 +250,15 @@ function extractFromMapping(
 ): SnapshotMetric {
   if (!mapping) return {};
   const metrics: SnapshotMetric = {};
-
   for (const [header, role] of Object.entries(mapping)) {
     const n = parseNumeric(getValueByHeaderNormalized(record, header));
     if (n === null) continue;
-
     if (role === 'revenue') metrics.revenue = (metrics.revenue ?? 0) + n;
     if (role === 'cost') metrics.laborCost = (metrics.laborCost ?? 0) + n;
     if (role === 'labor_hours') metrics.laborHours = (metrics.laborHours ?? 0) + n;
     if (role === 'attendance') metrics.attendance = (metrics.attendance ?? 0) + n;
     if (role === 'utilization') metrics.utilization = (metrics.utilization ?? 0) + n;
   }
-
   return metrics;
 }
 
@@ -337,12 +293,27 @@ function buildSnapshotRows(period: Period, bucket: MetricAccumulator, orgId: str
   }));
 }
 
+// ── Helper: Extract DetectedMetrics from upload.detection ────────
+
+function extractDetectedMetrics(detection: Record<string, unknown> | null): DetectedMetrics | null {
+  if (!detection || typeof detection !== 'object') return null;
+  const det = detection;
+  if (!det.metrics || typeof det.metrics !== 'object') return null;
+  const m = det.metrics as Record<string, unknown>;
+  return {
+    dateColumn: typeof m.dateColumn === 'string' ? m.dateColumn : null,
+    revenueColumns: Array.isArray(m.revenueColumns) ? m.revenueColumns as string[] : [],
+    costColumns: Array.isArray(m.costColumns) ? m.costColumns as string[] : [],
+    attendanceColumns: Array.isArray(m.attendanceColumns) ? m.attendanceColumns as string[] : [],
+    utilizationColumns: Array.isArray(m.utilizationColumns) ? m.utilizationColumns as string[] : [],
+  };
+}
+
 // ── Single Upload Processing ────────────────────────────────────
 
 export async function processUploadData(orgId: string, uploadId: string): Promise<void> {
   const supabase = await createClient();
 
-  // Fetch upload record including detection columns
   const { data: upload, error: uploadError } = await supabase
     .from('uploads')
     .select('id, org_id, data_type, column_mapping, detection, detection_stream_type')
@@ -354,35 +325,15 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
       detection_stream_type: string | null;
     }>();
 
-  if (uploadError || !upload) {
-    return;
-  }
+  if (uploadError || !upload) return;
 
-  // If stream type is non-KPI (staff_roster, client_roster, schedule, inventory),
-  // skip KPI generation entirely — rows exist for ontology only.
   const streamType = (upload.detection_stream_type ?? 'unknown') as StreamType;
   if (NON_KPI_STREAM_TYPES.has(streamType)) {
     console.log(`[processor] Skipping KPI generation for ${streamType} upload ${uploadId}`);
     return;
   }
 
-  const columnMapping = upload.column_mapping ?? null;
-
-  // Extract detected metrics from the detection payload
-  let detectedMetrics: DetectedMetrics | null = null;
-  if (upload.detection && typeof upload.detection === 'object') {
-    const det = upload.detection as Record<string, unknown>;
-    if (det.metrics && typeof det.metrics === 'object') {
-      const m = det.metrics as Record<string, unknown>;
-      detectedMetrics = {
-        dateColumn: typeof m.dateColumn === 'string' ? m.dateColumn : null,
-        revenueColumns: Array.isArray(m.revenueColumns) ? m.revenueColumns as string[] : [],
-        costColumns: Array.isArray(m.costColumns) ? m.costColumns as string[] : [],
-        attendanceColumns: Array.isArray(m.attendanceColumns) ? m.attendanceColumns as string[] : [],
-        utilizationColumns: Array.isArray(m.utilizationColumns) ? m.utilizationColumns as string[] : [],
-      };
-    }
-  }
+  const detectedMetrics = extractDetectedMetrics(upload.detection);
 
   const { data: rows, error: rowsError } = await supabase
     .from('data_rows')
@@ -391,17 +342,69 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     .eq('upload_id', uploadId)
     .returns<DataRow[]>();
 
-  if (rowsError || !rows || rows.length === 0) {
+  if (rowsError || !rows || rows.length === 0) return;
+
+  // ── For transactions_sales: use TransactionFacts as source of truth ──
+  if (streamType === 'transactions_sales') {
+    const result = buildTransactionFacts(rows, detectedMetrics, upload.column_mapping);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[processor] TransactionFacts built:', {
+        orgId,
+        uploadId,
+        totalFacts: result.facts.length,
+        dateFormat: result.dateFormat,
+        dateParseFailures: result.dateParseFailures,
+        revenueParseFailures: result.revenueParseFailures,
+        resolvedRevenueColumn: result.resolvedRevenueColumn,
+        resolvedDateColumn: result.resolvedDateColumn,
+        dateRange: result.dateRange,
+      });
+    }
+
+    if (result.facts.length === 0) {
+      console.warn(`[processor] transactions_sales upload ${uploadId} produced 0 facts — date/revenue parsing failed`);
+      return;
+    }
+
+    const dailyMetrics: MetricAccumulator = {};
+    const weeklyMetrics: MetricAccumulator = {};
+    const monthlyMetrics: MetricAccumulator = {};
+
+    for (const fact of result.facts) {
+      const dateKey = fact.dateKey;
+      const weekKey = formatISO(startOfISOWeek(parseISO(dateKey)), { representation: 'date' });
+      const monthKey = formatISO(startOfMonth(parseISO(dateKey)), { representation: 'date' });
+
+      const metrics: SnapshotMetric = { revenue: fact.amountTotal };
+
+      accumulate(dailyMetrics, dateKey, metrics);
+      accumulate(weeklyMetrics, weekKey, metrics);
+      accumulate(monthlyMetrics, monthKey, metrics);
+    }
+
+    const upsertRows = [
+      ...buildSnapshotRows('daily', dailyMetrics, orgId, uploadId),
+      ...buildSnapshotRows('weekly', weeklyMetrics, orgId, uploadId),
+      ...buildSnapshotRows('monthly', monthlyMetrics, orgId, uploadId),
+    ];
+
+    if (upsertRows.length > 0) {
+      await supabase.from('kpi_snapshots').delete()
+        .eq('org_id', orgId)
+        .eq('upload_id', uploadId);
+
+      for (let i = 0; i < upsertRows.length; i += 500) {
+        const batch = upsertRows.slice(i, i + 500);
+        await supabase.from('kpi_snapshots').insert(batch);
+      }
+    }
     return;
   }
 
-  const dailyMetrics: MetricAccumulator = {};
-  const weeklyMetrics: MetricAccumulator = {};
-  const monthlyMetrics: MetricAccumulator = {};
-
+  // ── Non-sales uploads: use existing multi-metric extraction ──────
+  const columnMapping = upload.column_mapping ?? null;
   const mapping = normalizeColumnMapping(columnMapping);
-
-  // Build actual headers from first data row for resolveHeader
   const actualHeaders = rows.length > 0
     ? Object.keys(rows[0].data as Record<string, unknown>)
     : [];
@@ -409,54 +412,60 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
   // Resolve detected columns against actual headers
   let resolvedDetectedMetrics: DetectedMetrics | null = null;
   if (detectedMetrics) {
-    const resolvedRevenue = resolveDetectedColumns(detectedMetrics.revenueColumns, actualHeaders);
-    const resolvedCost = resolveDetectedColumns(detectedMetrics.costColumns, actualHeaders);
-    const resolvedAttendance = resolveDetectedColumns(detectedMetrics.attendanceColumns, actualHeaders);
-    const resolvedUtilization = resolveDetectedColumns(detectedMetrics.utilizationColumns, actualHeaders);
-    const resolvedDate = detectedMetrics.dateColumn
-      ? resolveHeader(detectedMetrics.dateColumn, actualHeaders)
-      : null;
-
     resolvedDetectedMetrics = {
-      dateColumn: resolvedDate,
-      revenueColumns: resolvedRevenue,
-      costColumns: resolvedCost,
-      attendanceColumns: resolvedAttendance,
-      utilizationColumns: resolvedUtilization,
+      dateColumn: detectedMetrics.dateColumn
+        ? resolveHeader(detectedMetrics.dateColumn, actualHeaders)
+        : null,
+      revenueColumns: resolveDetectedColumns(detectedMetrics.revenueColumns, actualHeaders),
+      costColumns: resolveDetectedColumns(detectedMetrics.costColumns, actualHeaders),
+      attendanceColumns: resolveDetectedColumns(detectedMetrics.attendanceColumns, actualHeaders),
+      utilizationColumns: resolveDetectedColumns(detectedMetrics.utilizationColumns, actualHeaders),
     };
 
-    // Dev-only detection resolution log
     if (process.env.NODE_ENV !== 'production') {
       console.log('[processor] Detection resolution:', {
-        orgId,
-        uploadId,
-        resolvedRevenue,
-        resolvedCost,
-        resolvedDate,
+        orgId, uploadId,
+        resolvedRevenue: resolvedDetectedMetrics.revenueColumns,
+        resolvedCost: resolvedDetectedMetrics.costColumns,
+        resolvedDate: resolvedDetectedMetrics.dateColumn,
         actualHeadersSample: actualHeaders.slice(0, 10),
       });
     }
   }
 
-  // Date header priority: detection > mapping > fallback
   const detectedDateHeader = resolvedDetectedMetrics?.dateColumn ?? null;
   const mappedDateHeader = getMappedHeader(mapping, 'date');
+
+  // Detect date format for this upload
+  const dateSamples: unknown[] = [];
+  for (const row of rows.slice(0, 50)) {
+    const record = row.data as Record<string, unknown>;
+    const rawDate = row.date
+      ?? getValueByHeaderNormalized(record, detectedDateHeader)
+      ?? getValueByHeaderNormalized(record, mappedDateHeader)
+      ?? findFallbackDateValue(record);
+    if (rawDate != null) dateSamples.push(rawDate);
+  }
+  const dateFormat = detectDateFormat(dateSamples);
+  const dayFirst = dateFormat !== 'MM/dd/yyyy';
+
+  const dailyMetrics: MetricAccumulator = {};
+  const weeklyMetrics: MetricAccumulator = {};
+  const monthlyMetrics: MetricAccumulator = {};
 
   for (const row of rows) {
     const record = row.data as Record<string, unknown>;
 
-    // Date resolution: row.date > detected date col > mapped date col > fallback
+    // Date resolution: row.date > detected > mapped > fallback
     const isoFromRow = row.date ? toDateKey(row.date) : null;
-    let rawDerived: unknown = null;
-    if (!isoFromRow) {
-      rawDerived =
+    let baseDateKey: string | null = isoFromRow;
+    if (!baseDateKey) {
+      const rawDerived =
         getValueByHeaderNormalized(record, detectedDateHeader) ??
         getValueByHeaderNormalized(record, mappedDateHeader) ??
         findFallbackDateValue(record);
+      baseDateKey = robustNormalizeDate(rawDerived, dayFirst);
     }
-    const isoDerived = !isoFromRow ? normalizeToISODate(rawDerived) : null;
-
-    const baseDateKey = toDateKey(isoFromRow ?? isoDerived);
     if (!baseDateKey) continue;
 
     const parsedDate = parseISO(baseDateKey);
@@ -465,11 +474,6 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
 
     const dataType = upload.data_type.toLowerCase();
 
-    // Metric extraction priority:
-    // 1. AI-detected columns (resolved against actual headers)
-    // 2. User column_mapping
-    // 3. Hardcoded heuristic keys
-    // 4. Data-type-specific fallback
     let metrics: SnapshotMetric = {};
     if (resolvedDetectedMetrics) {
       metrics = extractFromDetection(record, resolvedDetectedMetrics);
@@ -490,19 +494,12 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     ...buildSnapshotRows('monthly', monthlyMetrics, orgId, uploadId),
   ];
 
-  if (upsertRows.length === 0) {
-    if (streamType === 'transactions_sales') {
-      console.warn(`[processor] transactions_sales upload ${uploadId} produced 0 KPI rows — revenue column may be undetected`);
-    }
-    return;
-  }
+  if (upsertRows.length === 0) return;
 
-  // Delete existing snapshots for THIS upload before inserting fresh ones
   await supabase.from('kpi_snapshots').delete()
     .eq('org_id', orgId)
     .eq('upload_id', uploadId);
 
-  // Insert fresh snapshots with upload_id linkage
   for (let i = 0; i < upsertRows.length; i += 500) {
     const batch = upsertRows.slice(i, i + 500);
     await supabase.from('kpi_snapshots').insert(batch);
@@ -511,16 +508,9 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
 
 // ── Full Org Recompute ──────────────────────────────────────────
 
-/**
- * Recomputes ALL KPI snapshots for an org by aggregating across every
- * data_row belonging to active streams (or legacy uploads without a stream).
- * Deletes stale snapshots and rebuilds from scratch for determinism.
- * Skips non-KPI uploads (staff_roster, client_roster, etc.).
- */
 export async function recomputeOrgKpis(orgId: string): Promise<void> {
   const supabase = await createClient();
 
-  // Find active stream IDs (paused/archived streams are excluded)
   const { data: activeStreams } = await supabase
     .from('data_streams')
     .select('id')
@@ -530,7 +520,6 @@ export async function recomputeOrgKpis(orgId: string): Promise<void> {
 
   const activeStreamIds = new Set((activeStreams ?? []).map((s) => s.id));
 
-  // Get all uploads for this org — including detection
   const { data: orgUploads } = await supabase
     .from('uploads')
     .select('id, data_type, column_mapping, stream_id, detection, detection_stream_type')
@@ -550,11 +539,9 @@ export async function recomputeOrgKpis(orgId: string): Promise<void> {
     return;
   }
 
-  // Filter out uploads belonging to inactive streams AND non-KPI stream types
   const activeUploads = orgUploads.filter((u) => {
-    if (!u.stream_id) return true; // legacy uploads without stream always included
+    if (!u.stream_id) return true;
     if (!activeStreamIds.has(u.stream_id)) return false;
-    // Skip non-KPI stream types
     const st = u.detection_stream_type ?? 'unknown';
     if (NON_KPI_STREAM_TYPES.has(st)) return false;
     return true;
@@ -565,97 +552,11 @@ export async function recomputeOrgKpis(orgId: string): Promise<void> {
     return;
   }
 
-  const uploadIds = activeUploads.map((u) => u.id);
-  const uploadMappings = new Map(
-    activeUploads.map((u) => [u.id, normalizeColumnMapping(u.column_mapping)]),
-  );
-
-  // Build per-upload detected metrics map
-  const uploadDetectedMetrics = new Map<string, DetectedMetrics | null>();
-  for (const u of activeUploads) {
-    let dm: DetectedMetrics | null = null;
-    if (u.detection && typeof u.detection === 'object') {
-      const det = u.detection as Record<string, unknown>;
-      if (det.metrics && typeof det.metrics === 'object') {
-        const m = det.metrics as Record<string, unknown>;
-        dm = {
-          dateColumn: typeof m.dateColumn === 'string' ? m.dateColumn : null,
-          revenueColumns: Array.isArray(m.revenueColumns) ? m.revenueColumns as string[] : [],
-          costColumns: Array.isArray(m.costColumns) ? m.costColumns as string[] : [],
-          attendanceColumns: Array.isArray(m.attendanceColumns) ? m.attendanceColumns as string[] : [],
-          utilizationColumns: Array.isArray(m.utilizationColumns) ? m.utilizationColumns as string[] : [],
-        };
-      }
-    }
-    uploadDetectedMetrics.set(u.id, dm);
-  }
-
-  // Fetch all data_rows for active uploads
-  const { data: allRows, error: rowsError } = await supabase
-    .from('data_rows')
-    .select('date, data, upload_id')
-    .eq('org_id', orgId)
-    .in('upload_id', uploadIds)
-    .returns<(DataRow & { upload_id: string })[]>();
-
-  if (rowsError || !allRows || allRows.length === 0) {
-    await supabase.from('kpi_snapshots').delete().eq('org_id', orgId);
-    return;
-  }
-
-  const dailyMetrics: MetricAccumulator = {};
-  const weeklyMetrics: MetricAccumulator = {};
-  const monthlyMetrics: MetricAccumulator = {};
-
-  for (const row of allRows) {
-    const record = row.data as Record<string, unknown>;
-    const mapping = uploadMappings.get(row.upload_id) ?? null;
-    const detMetrics = uploadDetectedMetrics.get(row.upload_id) ?? null;
-
-    const detectedDateHeader = detMetrics?.dateColumn ?? null;
-    const mappedDateHeader = getMappedHeader(mapping, 'date');
-
-    const isoFromRow = row.date ? toDateKey(row.date) : null;
-    let rawDerived: unknown = null;
-    if (!isoFromRow) {
-      rawDerived =
-        getValueByHeaderNormalized(record, detectedDateHeader) ??
-        getValueByHeaderNormalized(record, mappedDateHeader) ??
-        findFallbackDateValue(record);
-    }
-    const isoDerived = !isoFromRow ? normalizeToISODate(rawDerived) : null;
-
-    const baseDateKey = toDateKey(isoFromRow ?? isoDerived);
-    if (!baseDateKey) continue;
-
-    const parsedDate = parseISO(baseDateKey);
-    const weekKey = formatISO(startOfISOWeek(parsedDate), { representation: 'date' });
-    const monthKey = formatISO(startOfMonth(parsedDate), { representation: 'date' });
-
-    // Metric extraction priority: detection > mapping > heuristic
-    let metrics: SnapshotMetric = {};
-    if (detMetrics) {
-      metrics = extractFromDetection(record, detMetrics);
-    }
-    if (!hasAnyMetric(metrics)) metrics = extractFromMapping(record, mapping);
-    if (!hasAnyMetric(metrics)) metrics = extractUniversal(record);
-    if (!hasAnyMetric(metrics)) continue;
-
-    accumulate(dailyMetrics, baseDateKey, metrics);
-    accumulate(weeklyMetrics, weekKey, metrics);
-    accumulate(monthlyMetrics, monthKey, metrics);
-  }
-
-  const freshRows = [
-    ...buildSnapshotRows('daily', dailyMetrics, orgId),
-    ...buildSnapshotRows('weekly', weeklyMetrics, orgId),
-    ...buildSnapshotRows('monthly', monthlyMetrics, orgId),
-  ];
-
-  // Delete + insert for deterministic recompute
+  // Delete all and rebuild
   await supabase.from('kpi_snapshots').delete().eq('org_id', orgId);
 
-  if (freshRows.length > 0) {
-    await supabase.from('kpi_snapshots').insert(freshRows);
+  // Process each upload individually so TransactionFacts path is used for sales
+  for (const u of activeUploads) {
+    await processUploadData(orgId, u.id);
   }
 }
