@@ -36,6 +36,7 @@ import {
   Eye,
   EyeOff,
   Network,
+  AlertTriangle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -346,6 +347,32 @@ export default function DataModelPage() {
   const previousNameRef = useRef('');
   const previousDescRef = useRef('');
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+
+  // ── Review banner state ─────────────────────────────────────────────
+  const [pendingReview, setPendingReview] = useState<{
+    mappingRunId: string;
+    questions: { id: string; type: string; question: string; suggestion: string; confidence: number; affectedRows: number }[];
+  } | null>(null);
+  const [reviewDismissed, setReviewDismissed] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from('mapping_runs')
+      .select('id, review_questions')
+      .eq('needs_review', true)
+      .eq('review_status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data }: { data: { id: string; review_questions: unknown[] }[] | null }) => {
+        if (data && data.length > 0 && Array.isArray(data[0]!.review_questions) && data[0]!.review_questions.length > 0) {
+          setPendingReview({
+            mappingRunId: data[0]!.id,
+            questions: data[0]!.review_questions as { id: string; type: string; question: string; suggestion: string; confidence: number; affectedRows: number }[],
+          });
+        }
+      });
+  }, [entities.length]); // re-fetch when entities change (after upload)
 
   // ── Graph interaction state ─────────────────────────────────────────
   const { org } = useUser();
@@ -771,6 +798,48 @@ export default function DataModelPage() {
           Table
         </button>
       </div>
+
+      {/* Review banner — shown when role inference flagged ambiguity */}
+      {pendingReview && !reviewDismissed && (
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-5 py-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-amber-300">
+                  Review needed
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReviewDismissed(true)}
+                  className="text-xs text-slate-500 hover:text-slate-300"
+                >
+                  Dismiss
+                </button>
+              </div>
+              <div className="mt-1.5 space-y-1.5">
+                {pendingReview.questions.slice(0, 3).map((q) => (
+                  <div key={q.id} className="flex items-start gap-2 text-xs text-slate-400">
+                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500/60" />
+                    <span>
+                      {q.question}
+                      {q.suggestion && (
+                        <span className="ml-1.5 text-amber-400/70">(Suggested: {q.suggestion})</span>
+                      )}
+                      <span className="ml-1.5 text-slate-500">({q.affectedRows} rows)</span>
+                    </span>
+                  </div>
+                ))}
+                {pendingReview.questions.length > 3 && (
+                  <p className="text-xs text-slate-500">
+                    +{pendingReview.questions.length - 3} more items
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {entityTypes.length > 0 &&
         entities.some((e) => e.source_upload_id) && (

@@ -119,13 +119,13 @@ export function parsePayrollCsv(
  */
 export async function loadStaffRosterFromDb(
   orgId: string,
-  supabase: { from: (table: string) => { select: (cols: string) => { eq: (col: string, val: string) => { returns: <T>() => Promise<{ data: T | null }> } } } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
 ): Promise<Set<string>> {
   const { data } = await supabase
     .from('staff_roster_overrides')
     .select('normalized_name')
-    .eq('org_id', orgId)
-    .returns<{ normalized_name: string }[]>();
+    .eq('org_id', orgId) as { data: { normalized_name: string }[] | null };
 
   const names = new Set<string>();
   for (const row of data ?? []) {
@@ -145,7 +145,8 @@ export async function saveStaffRosterToDb(
   names: Set<string>,
   source: 'payroll_import' | 'manual' | 'review_confirm',
   uploadId: string | null,
-  supabase: { from: (table: string) => { upsert: (rows: unknown[], opts: { onConflict: string; ignoreDuplicates: boolean }) => Promise<{ error: unknown | null }> } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
 ): Promise<void> {
   if (names.size === 0) return;
 

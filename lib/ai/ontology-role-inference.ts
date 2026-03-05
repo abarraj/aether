@@ -421,7 +421,7 @@ function rewriteDetection(
       color: '#10B981',
       aggregatedProperties: [
         ...revenueAgg,
-        { sourceColumn: roles.totalColumn ?? roles.amountColumn ?? '', key: 'transaction_count', label: 'Transactions', type: 'number', aggregation: 'count' },
+        { sourceColumn: roles.totalColumn ?? roles.amountColumn ?? '', key: 'transaction_count', label: 'Transactions', type: 'number' as const, aggregation: 'count' as const },
       ].filter((p) => p.sourceColumn !== ''),
     });
   }
@@ -439,7 +439,7 @@ function rewriteDetection(
       icon: 'briefcase',
       color: '#06B6D4',
       aggregatedProperties: [
-        ...revenueAgg.map((p) => ({ ...p, key: 'revenue_processed', label: 'Revenue Processed' })),
+        ...revenueAgg.map((p) => ({ ...p, key: 'revenue_processed' as const, label: 'Revenue Processed' as const })),
         { sourceColumn: roles.totalColumn ?? roles.amountColumn ?? '', key: 'transactions_processed', label: 'Transactions Processed', type: 'number' as const, aggregation: 'count' as const },
       ].filter((p) => p.sourceColumn !== ''),
     });

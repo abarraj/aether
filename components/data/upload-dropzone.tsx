@@ -3,7 +3,13 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, UploadCloud, Sparkles, Calendar, DollarSign, Users, MapPin, Dumbbell, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  X, UploadCloud, Sparkles, Calendar, DollarSign, Users, MapPin, Dumbbell,
+  AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Briefcase, Package,
+  Building2, Zap, GraduationCap, Heart, Truck, ShoppingCart, Coffee, Music,
+  Wrench, Star, Tag, Clock, BarChart3, Circle,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -28,6 +34,16 @@ function isCsvOrTsv(name: string): boolean {
 }
 
 type Step = 'drop' | 'analyzing' | 'confirm' | 'customize' | 'importing' | 'done';
+
+/** Maps entity type icon keys to Lucide components — shared with data-model page. */
+const ENTITY_ICON_MAP: Record<string, LucideIcon> = {
+  user: Users, building2: Building2, mappin: MapPin, package: Package,
+  dollarsign: DollarSign, calendar: Calendar, briefcase: Briefcase,
+  graduationcap: GraduationCap, heart: Heart, truck: Truck,
+  shoppingcart: ShoppingCart, coffee: Coffee, dumbbell: Dumbbell,
+  music: Music, wrench: Wrench, zap: Zap, star: Star, tag: Tag,
+  clock: Clock, barchart3: BarChart3, circle: Circle,
+};
 
 export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProps) {
   const router = useRouter();
@@ -215,11 +231,18 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
 
       const result = (await response.json()) as {
         ontology?: { entitiesCreated: number; relationshipsCreated: number };
+        needsReview?: boolean;
+        reviewSummary?: string;
       };
       setProgress(100);
       setStep('done');
       onUploaded?.();
-      if (result.ontology && (result.ontology.entitiesCreated > 0 || result.ontology.relationshipsCreated > 0)) {
+      if (result.needsReview) {
+        toast.info(
+          result.reviewSummary ?? 'Some data needs your review. Check Your Business for details.',
+          { duration: 6000 },
+        );
+      } else if (result.ontology && (result.ontology.entitiesCreated > 0 || result.ontology.relationshipsCreated > 0)) {
         toast.success('Your data is connected. We mapped your team and locations.');
       } else {
         toast.success('Your data is being processed.');
@@ -507,16 +530,15 @@ function ConfirmStep({
             <span>Attendance tracked</span>
           </div>
         )}
-        {detection.entityTypes?.slice(0, 4).map((et) => (
-          <div key={et.slug} className="flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-slate-200">
-            {et.slug.includes('location') || et.slug.includes('studio') ? (
-              <MapPin className="h-4 w-4 text-slate-500" />
-            ) : (
-              <Dumbbell className="h-4 w-4 text-slate-500" />
-            )}
-            <span>{et.name} detected</span>
-          </div>
-        ))}
+        {detection.entityTypes?.slice(0, 6).map((et) => {
+          const EtIcon = ENTITY_ICON_MAP[et.icon?.toLowerCase()] ?? Circle;
+          return (
+            <div key={et.slug} className="flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-slate-200">
+              <EtIcon className="h-4 w-4 shrink-0" style={{ color: et.color || undefined }} />
+              <span>{et.name} detected</span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Expandable mapping details */}

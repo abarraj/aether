@@ -339,6 +339,11 @@ export async function POST(request: NextRequest) {
     // This writes both metric_snapshots (new) and kpi_snapshots (legacy).
     await runComputeJob(ctx.orgId, 'upload', uploadRecord.id);
 
+    // Hoisted for use in both ontology build and response.
+    let inferenceNeedsReview = false;
+    let inferenceReviewQuestions: unknown[] = [];
+    let inferenceMetadataPayload: unknown = {};
+
     // Step 2: Build ontology (gap engine needs entity_types first)
     // For transactional data, run the role inference engine between
     // AI detection and ontology materialization.
@@ -372,9 +377,6 @@ export async function POST(request: NextRequest) {
 
           // ── Role inference engine (transactional data only) ──────
           const allHeaders = allRows.length > 0 ? Object.keys(allRows[0]!) : [];
-          let inferenceNeedsReview = false;
-          let inferenceReviewQuestions: unknown[] = [];
-          let inferenceMetadataPayload: unknown = {};
 
           if (allRows.length > 0 && isTransactionalDataset(allHeaders)) {
             // Load staff roster from DB (org-scoped)
@@ -514,6 +516,12 @@ export async function POST(request: NextRequest) {
       ipAddress: getClientIp(request),
     });
 
+    // Build review summary for client toast
+    const reviewQuestionCount = Array.isArray(inferenceReviewQuestions) ? inferenceReviewQuestions.length : 0;
+    const reviewSummary = inferenceNeedsReview && reviewQuestionCount > 0
+      ? `Imported successfully, but ${reviewQuestionCount} item${reviewQuestionCount > 1 ? 's' : ''} need${reviewQuestionCount === 1 ? 's' : ''} your review. Check Your Business for details.`
+      : undefined;
+
     return NextResponse.json(
       {
         id: uploadRecord.id,
@@ -521,6 +529,8 @@ export async function POST(request: NextRequest) {
         ontology: ontologyResult,
         streamId,
         streamVersionId,
+        needsReview: inferenceNeedsReview,
+        reviewSummary,
       },
       { status: 200 },
     );
