@@ -55,6 +55,16 @@ import { cn } from '@/lib/utils';
 import { useUser } from '@/hooks/use-user';
 import { EntityDetailPanel } from '@/components/data/entity-detail-panel';
 
+/** Strip surrounding quotes from entity names (CSV artifacts). */
+function displayName(name: string): string {
+  let s = name;
+  // Remove matching surrounding double or single quotes
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  return s.trim();
+}
+
 function formatPropertyValue(value: unknown, type: PropertyType): string {
   if (value == null) return '—';
   if (type === 'currency') {
@@ -91,9 +101,9 @@ function entityPropertiesSorted(entity: Entity, entityType: EntityType): { key: 
 
 function entityInlineSummary(entity: Entity, entityType: EntityType, max = 3): string {
   const sorted = entityPropertiesSorted(entity, entityType).slice(0, max);
-  if (sorted.length === 0) return entity.name;
+  if (sorted.length === 0) return displayName(entity.name);
   const parts = sorted.map((p) => `${p.label}: ${formatPropertyValue(p.value, p.type)}`);
-  return `${entity.name} — ${parts.join(' · ')}`;
+  return `${displayName(entity.name)} — ${parts.join(' · ')}`;
 }
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -347,6 +357,7 @@ export default function DataModelPage() {
   const previousNameRef = useRef('');
   const previousDescRef = useRef('');
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
   // ── Review banner state ─────────────────────────────────────────────
   const [pendingReview, setPendingReview] = useState<{
@@ -565,7 +576,7 @@ export default function DataModelPage() {
             const key = `${fromEntity.id}:${toEntity.id}`;
             if (seen.has(key)) return;
             seen.add(key);
-            items.push({ from: fromEntity.name, to: toEntity.name });
+            items.push({ from: displayName(fromEntity.name), to: displayName(toEntity.name) });
           });
           if (items.length === 0) return null;
           return { type: relType, items };
@@ -680,9 +691,9 @@ export default function DataModelPage() {
         const fromEntity = entities.find((e) => e.id === r.from_entity_id);
         const toEntity = entities.find((e) => e.id === r.to_entity_id);
         if (r.from_entity_id === entityId && toEntity) {
-          out.push({ relName: relType?.name ?? '', targetName: toEntity.name });
+          out.push({ relName: relType?.name ?? '', targetName: displayName(toEntity.name) });
         } else if (r.to_entity_id === entityId && fromEntity) {
-          out.push({ relName: relType?.name ?? '', targetName: fromEntity.name });
+          out.push({ relName: relType?.name ?? '', targetName: displayName(fromEntity.name) });
         }
       });
       return out;
@@ -920,8 +931,9 @@ export default function DataModelPage() {
                   const sortedMetrics = [...metrics].sort((a, b) => b.numeric - a.numeric);
                   const totalValue = sortedMetrics.reduce((sum, m) => sum + m.numeric, 0);
                   const maxValue = sortedMetrics[0]?.numeric ?? 0;
-                  const visibleMetrics = sortedMetrics.slice(0, 5);
-                  const remainingCount = sortedMetrics.length - visibleMetrics.length;
+                  const isExpanded = expandedCards.has(et.id);
+                  const visibleMetrics = isExpanded ? sortedMetrics : sortedMetrics.slice(0, 5);
+                  const remainingCount = isExpanded ? 0 : sortedMetrics.length - visibleMetrics.length;
                   const primaryType = sortedMetrics[0]?.primary.type;
                   const formatTotal = (value: number) =>
                     primaryType
@@ -985,7 +997,7 @@ export default function DataModelPage() {
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <span className="truncate text-sm font-medium text-slate-200">
-                                      {m.entity.name}
+                                      {displayName(m.entity.name)}
                                     </span>
                                     <span className="text-sm font-semibold text-slate-100">
                                       {formatPropertyValue(
@@ -1015,14 +1027,30 @@ export default function DataModelPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const next = sortedMetrics
-                                    .slice(visibleMetrics.length)
-                                    .map((m) => m.entity.id)[0];
-                                  if (next) setSelectedEntityId(next);
+                                  setExpandedCards((prev) => {
+                                    const next = new Set(prev);
+                                    next.add(et.id);
+                                    return next;
+                                  });
                                 }}
                                 className="w-full px-3 py-2 text-center text-xs text-slate-500 hover:bg-zinc-900/70 rounded-b-2xl"
                               >
                                 + {remainingCount} more
+                              </button>
+                            )}
+                            {isExpanded && sortedMetrics.length > 5 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedCards((prev) => {
+                                    const next = new Set(prev);
+                                    next.delete(et.id);
+                                    return next;
+                                  });
+                                }}
+                                className="w-full px-3 py-2 text-center text-xs text-slate-500 hover:bg-zinc-900/70 rounded-b-2xl"
+                              >
+                                Show less
                               </button>
                             )}
                           </div>
@@ -1067,8 +1095,9 @@ export default function DataModelPage() {
                   </h3>
                   <div className="space-y-3">
                     {relationshipGroups.map((group) => {
-                      const visible = group.items.slice(0, 5);
-                      const extra = group.items.length - visible.length;
+                      const relExpanded = expandedCards.has(`rel:${group.type.id}`);
+                      const visible = relExpanded ? group.items : group.items.slice(0, 5);
+                      const extra = relExpanded ? 0 : group.items.length - visible.length;
                       return (
                         <div key={group.type.id} className="space-y-1.5">
                           <div className="text-xs font-medium text-slate-400">
@@ -1099,11 +1128,30 @@ export default function DataModelPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setActiveTab('graph');
+                                  setExpandedCards((prev) => {
+                                    const next = new Set(prev);
+                                    next.add(`rel:${group.type.id}`);
+                                    return next;
+                                  });
                                 }}
                                 className="text-xs text-slate-500 hover:text-slate-300"
                               >
                                 + {extra} more
+                              </button>
+                            )}
+                            {relExpanded && group.items.length > 5 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedCards((prev) => {
+                                    const next = new Set(prev);
+                                    next.delete(`rel:${group.type.id}`);
+                                    return next;
+                                  });
+                                }}
+                                className="text-xs text-slate-500 hover:text-slate-300"
+                              >
+                                Show less
                               </button>
                             )}
                           </div>
