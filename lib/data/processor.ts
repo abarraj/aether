@@ -53,12 +53,58 @@ function parseNumeric(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
-    const cleaned = value.replace(/[$,]/g, '').trim();
+    let cleaned = value.trim();
+    if (!cleaned) return null;
+    // Parenthetical negatives: (500) => -500
+    const parenMatch = /^\(([0-9.,]+)\)$/.exec(cleaned);
+    if (parenMatch) {
+      cleaned = `-${parenMatch[1]}`;
+    }
+    // Strip currency symbols ($, €, £), commas, whitespace
+    cleaned = cleaned.replace(/[$€£,\s]/g, '');
+    // Strip trailing percent sign: "12%" => 12
+    cleaned = cleaned.replace(/%$/, '');
     if (!cleaned) return null;
     const n = Number(cleaned);
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+/**
+ * Resolve an AI-detected header name to the actual header in the data row.
+ * Handles case differences, underscores vs spaces, and partial containment.
+ */
+function resolveHeader(detected: string, actualHeaders: string[]): string | null {
+  if (!detected) return null;
+  const dNorm = normKey(detected).replace(/_/g, ' ');
+  // 1. Exact normalized match (case-insensitive, whitespace-normalized)
+  for (const h of actualHeaders) {
+    if (normKey(h) === dNorm) return h;
+  }
+  // 2. Underscore/space equivalence
+  for (const h of actualHeaders) {
+    if (normKey(h).replace(/_/g, ' ') === dNorm) return h;
+  }
+  // 3. Containment: detected is substring of actual or vice versa
+  for (const h of actualHeaders) {
+    const hNorm = normKey(h).replace(/_/g, ' ');
+    if (hNorm.includes(dNorm) || dNorm.includes(hNorm)) return h;
+  }
+  return null;
+}
+
+/**
+ * Resolve an array of AI-detected column names to actual headers.
+ * Returns only successfully resolved headers.
+ */
+function resolveDetectedColumns(detected: string[], actualHeaders: string[]): string[] {
+  const resolved: string[] = [];
+  for (const d of detected) {
+    const h = resolveHeader(d, actualHeaders);
+    if (h) resolved.push(h);
+  }
+  return resolved;
 }
 
 function toDateKey(raw: string | null): string | null {
@@ -281,12 +327,13 @@ function accumulate(bucket: MetricAccumulator, dateKey: string, delta: SnapshotM
   };
 }
 
-function buildSnapshotRows(period: Period, bucket: MetricAccumulator, orgId: string) {
+function buildSnapshotRows(period: Period, bucket: MetricAccumulator, orgId: string, uploadId?: string) {
   return Object.entries(bucket).map(([date, metrics]) => ({
     org_id: orgId,
     period,
     date,
     metrics,
+    ...(uploadId ? { upload_id: uploadId } : {}),
   }));
 }
 
@@ -353,8 +400,46 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
   const monthlyMetrics: MetricAccumulator = {};
 
   const mapping = normalizeColumnMapping(columnMapping);
+
+  // Build actual headers from first data row for resolveHeader
+  const actualHeaders = rows.length > 0
+    ? Object.keys(rows[0].data as Record<string, unknown>)
+    : [];
+
+  // Resolve detected columns against actual headers
+  let resolvedDetectedMetrics: DetectedMetrics | null = null;
+  if (detectedMetrics) {
+    const resolvedRevenue = resolveDetectedColumns(detectedMetrics.revenueColumns, actualHeaders);
+    const resolvedCost = resolveDetectedColumns(detectedMetrics.costColumns, actualHeaders);
+    const resolvedAttendance = resolveDetectedColumns(detectedMetrics.attendanceColumns, actualHeaders);
+    const resolvedUtilization = resolveDetectedColumns(detectedMetrics.utilizationColumns, actualHeaders);
+    const resolvedDate = detectedMetrics.dateColumn
+      ? resolveHeader(detectedMetrics.dateColumn, actualHeaders)
+      : null;
+
+    resolvedDetectedMetrics = {
+      dateColumn: resolvedDate,
+      revenueColumns: resolvedRevenue,
+      costColumns: resolvedCost,
+      attendanceColumns: resolvedAttendance,
+      utilizationColumns: resolvedUtilization,
+    };
+
+    // Dev-only detection resolution log
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[processor] Detection resolution:', {
+        orgId,
+        uploadId,
+        resolvedRevenue,
+        resolvedCost,
+        resolvedDate,
+        actualHeadersSample: actualHeaders.slice(0, 10),
+      });
+    }
+  }
+
   // Date header priority: detection > mapping > fallback
-  const detectedDateHeader = detectedMetrics?.dateColumn ?? null;
+  const detectedDateHeader = resolvedDetectedMetrics?.dateColumn ?? null;
   const mappedDateHeader = getMappedHeader(mapping, 'date');
 
   for (const row of rows) {
@@ -381,13 +466,13 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     const dataType = upload.data_type.toLowerCase();
 
     // Metric extraction priority:
-    // 1. AI-detected columns (source of truth)
+    // 1. AI-detected columns (resolved against actual headers)
     // 2. User column_mapping
     // 3. Hardcoded heuristic keys
     // 4. Data-type-specific fallback
     let metrics: SnapshotMetric = {};
-    if (detectedMetrics) {
-      metrics = extractFromDetection(record, detectedMetrics);
+    if (resolvedDetectedMetrics) {
+      metrics = extractFromDetection(record, resolvedDetectedMetrics);
     }
     if (!hasAnyMetric(metrics)) metrics = extractFromMapping(record, mapping);
     if (!hasAnyMetric(metrics)) metrics = extractUniversal(record);
@@ -400,9 +485,9 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
   }
 
   const upsertRows = [
-    ...buildSnapshotRows('daily', dailyMetrics, orgId),
-    ...buildSnapshotRows('weekly', weeklyMetrics, orgId),
-    ...buildSnapshotRows('monthly', monthlyMetrics, orgId),
+    ...buildSnapshotRows('daily', dailyMetrics, orgId, uploadId),
+    ...buildSnapshotRows('weekly', weeklyMetrics, orgId, uploadId),
+    ...buildSnapshotRows('monthly', monthlyMetrics, orgId, uploadId),
   ];
 
   if (upsertRows.length === 0) {
@@ -412,9 +497,16 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
     return;
   }
 
-  await supabase.from('kpi_snapshots').upsert(upsertRows, {
-    onConflict: 'org_id,period,date',
-  });
+  // Delete existing snapshots for THIS upload before inserting fresh ones
+  await supabase.from('kpi_snapshots').delete()
+    .eq('org_id', orgId)
+    .eq('upload_id', uploadId);
+
+  // Insert fresh snapshots with upload_id linkage
+  for (let i = 0; i < upsertRows.length; i += 500) {
+    const batch = upsertRows.slice(i, i + 500);
+    await supabase.from('kpi_snapshots').insert(batch);
+  }
 }
 
 // ── Full Org Recompute ──────────────────────────────────────────

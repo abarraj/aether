@@ -128,7 +128,8 @@ export default function DataPage() {
           .eq('upload_id', id)
           .eq('org_id', org.id);
         await supabase.from('entities').delete().eq('source_upload_id', id);
-        await supabase.from('kpi_snapshots').delete().eq('org_id', org.id);
+        // Delete only KPI snapshots tied to THIS upload (not org-wide)
+        await supabase.from('kpi_snapshots').delete().eq('upload_id', id);
         try {
           await supabase.from('performance_gaps').delete().eq('upload_id', id);
         } catch {
