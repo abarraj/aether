@@ -134,6 +134,7 @@ function PerformancePageInner() {
   const [data, setData] = useState<MatrixData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [uploadsExist, setUploadsExist] = useState(false);
+  const [latestStreamType, setLatestStreamType] = useState<string | null>(null);
   const [activeDimension, setActiveDimension] = useState<string | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<EntitySummary | null>(
     null,
@@ -198,6 +199,17 @@ function PerformancePageInner() {
         .eq('org_id', effectiveOrg.id)
         .eq('status', 'ready');
       setUploadsExist((count ?? 0) > 0);
+
+      // Fetch latest upload's stream type for contextual messaging
+      const { data: latestUpload } = await supabase
+        .from('uploads')
+        .select('detection_stream_type')
+        .eq('org_id', effectiveOrg.id)
+        .eq('status', 'ready')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<{ detection_stream_type: string | null }>();
+      setLatestStreamType(latestUpload?.detection_stream_type ?? null);
     };
     check();
   }, [effectiveOrg]);
@@ -283,14 +295,24 @@ function PerformancePageInner() {
             <BarChart3 className="h-7 w-7 text-slate-400" />
           </div>
           <h2 className="text-lg font-semibold tracking-tight text-slate-100">
-            {uploadsExist
-              ? 'Performance data processing'
-              : 'Performance data loading'}
+            {!uploadsExist
+              ? 'No data connected yet'
+              : latestStreamType === 'staff_roster' || latestStreamType === 'client_roster'
+                ? 'No sales data to analyze'
+                : latestStreamType === 'schedule'
+                  ? 'Schedule data connected'
+                  : 'Revenue data needed'}
           </h2>
           <p className="mt-2 text-sm text-slate-400">
-            {uploadsExist
-              ? 'Your data is connected. Delete and re-upload your spreadsheet to generate performance insights.'
-              : "Upload a spreadsheet with revenue data to see where you're leaving money on the table."}
+            {!uploadsExist
+              ? "Upload a spreadsheet with revenue data to see where you're leaving money on the table."
+              : latestStreamType === 'staff_roster'
+                ? 'Your staff roster is connected. Upload a sales or transactions report to compute performance metrics.'
+                : latestStreamType === 'client_roster'
+                  ? 'Your client list is connected. Upload a sales or transactions report to see performance insights.'
+                  : latestStreamType === 'schedule'
+                    ? 'Your schedule data is connected. Upload a sales report to unlock performance analysis.'
+                    : "We couldn't find revenue data in your uploads. Upload a sales report, or check your column mapping."}
           </p>
           <button
             type="button"
