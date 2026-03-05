@@ -7,6 +7,12 @@ export interface PlanLimits {
   users: number | null;
   storageMb: number | null;
   aiTier: 'basic' | 'full' | 'enterprise';
+  /** Max AI requests (credits) per calendar month. null = unlimited. */
+  aiCreditsPerMonth: number | null;
+  /** Max CSV/data rows ingested per calendar month. null = unlimited. */
+  maxRowsPerMonth: number | null;
+  /** Max concurrently active data streams. null = unlimited. */
+  maxActiveStreams: number | null;
 }
 
 export type BillingStatus = 'trialing' | 'active' | 'past_due' | 'canceled';

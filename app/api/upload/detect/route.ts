@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
+import { getOrgContext } from '@/lib/auth/org-context';
 import { detectOntology } from '@/lib/ai/ontology-detector';
 
 type Body = {
@@ -12,22 +12,9 @@ type Body = {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    const ctx = await getOrgContext();
+    if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<{ org_id: string | null }>();
-
-    if (!profile?.org_id) {
-      return NextResponse.json({ error: 'No organization' }, { status: 400 });
     }
 
     const body = (await request.json()) as Body;
@@ -37,7 +24,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'headers and rows required' }, { status: 400 });
     }
 
-    const detection = await detectOntology(headers, rows, profile.org_id);
+    const detection = await detectOntology(headers, rows, ctx.orgId);
     return NextResponse.json({ detection });
   } catch {
     return NextResponse.json({ error: 'Detection failed' }, { status: 500 });

@@ -8,7 +8,7 @@ import {
 } from 'date-fns';
 
 import { createClient } from '@/lib/supabase/server';
-import { claudeClient } from '@/lib/ai/claude';
+import { claude } from '@/lib/ai/claude';
 
 type SnapshotRow = {
   date: string;
@@ -198,7 +198,7 @@ export async function generateWeeklyReport(
       targets,
     };
 
-    const completion = await claudeClient.messages.create({
+    const completion = await claude().messages.create({
       model: 'claude-3-5-sonnet-20241022',
       max_tokens: 200,
       system:

@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { logAuditEvent } from '@/lib/audit';
-import { createClient } from '@/lib/supabase/server';
+import { requirePermission } from '@/lib/auth/org-context';
 
 type ClientAuditPayload = {
   action: string;
@@ -15,25 +15,15 @@ type ClientAuditPayload = {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
+    const result = await requirePermission('view_audit_log');
+    if (result instanceof NextResponse) return result;
+    const ctx = result;
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { data: profile } = await supabase
+    const { data: profile } = await ctx.supabase
       .from('profiles')
-      .select('id, org_id, email, full_name')
-      .eq('id', user.id)
-      .maybeSingle<{ id: string; org_id: string | null; email: string | null; full_name: string | null }>();
-
-    if (!profile?.org_id) {
-      return NextResponse.json({ error: 'User has no organization' }, { status: 400 });
-    }
+      .select('email, full_name')
+      .eq('id', ctx.userId)
+      .maybeSingle<{ email: string | null; full_name: string | null }>();
 
     const body = (await request.json()) as ClientAuditPayload;
 
@@ -45,9 +35,9 @@ export async function POST(request: NextRequest) {
     const ipAddress = ipHeader ? ipHeader.split(',')[0]?.trim() ?? null : null;
 
     await logAuditEvent({
-      orgId: profile.org_id,
-      actorId: profile.id,
-      actorEmail: profile.email ?? user.email ?? null,
+      orgId: ctx.orgId,
+      actorId: ctx.userId,
+      actorEmail: profile?.email ?? null,
       action: body.action,
       targetType: body.targetType ?? null,
       targetId: body.targetId ?? null,
@@ -61,4 +51,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to record audit event' }, { status: 500 });
   }
 }
-

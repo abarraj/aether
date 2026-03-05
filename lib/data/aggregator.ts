@@ -1,4 +1,7 @@
 // Aggregates KPI snapshots into summary metrics and time series.
+//
+// CLIENT-ONLY MODULE — uses the browser Supabase client (RLS-protected).
+// Do NOT import this from server routes or actions; use a server client instead.
 
 import { parseISO, subDays, differenceInCalendarDays, formatISO } from 'date-fns';
 

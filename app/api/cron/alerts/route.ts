@@ -1,8 +1,6 @@
-// Cron route to generate proactive recommendations for all active organizations.
-
 import { NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { generateRecommendations } from '@/lib/ai/recommendations';
 
 type OrgRow = {
@@ -10,13 +8,21 @@ type OrgRow = {
   onboarding_completed: boolean;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (cronSecret && request.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
-    const supabase = await createClient();
+    // Service role required: cron jobs have no user session.
+    const supabase = createAdminClient({ caller: 'cron-alerts' });
 
     const { data: orgs } = await supabase
       .from('organizations')
       .select('id, onboarding_completed')
+      .eq('onboarding_completed', true)
       .returns<OrgRow[]>();
 
     if (!orgs || orgs.length === 0) {
@@ -26,14 +32,17 @@ export async function GET() {
     let totalAlerts = 0;
 
     for (const org of orgs) {
-      if (!org.onboarding_completed) continue;
-
       const recommendations = await generateRecommendations(org.id);
       if (recommendations.length === 0) continue;
 
-      const { error } = await supabase.from('alerts').insert(recommendations);
+      const scoped = recommendations.map((rec) => ({
+        ...rec,
+        org_id: org.id,
+      }));
+
+      const { error } = await supabase.from('alerts').insert(scoped);
       if (!error) {
-        totalAlerts += recommendations.length;
+        totalAlerts += scoped.length;
       }
     }
 
@@ -42,4 +51,3 @@ export async function GET() {
     return NextResponse.json({ error: 'Failed to generate alerts.' }, { status: 500 });
   }
 }
-

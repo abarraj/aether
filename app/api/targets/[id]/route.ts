@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
-
-type ProfileOrg = { org_id: string | null };
+import { getOrgContext } from '@/lib/auth/org-context';
 
 export async function PATCH(
   request: NextRequest,
@@ -10,18 +8,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-    if (!profile?.org_id) return NextResponse.json({ error: 'No org' }, { status: 400 });
+    const ctx = await getOrgContext();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = (await request.json()) as Record<string, unknown>;
     const { status, notes, title } = body;
@@ -36,11 +24,11 @@ export async function PATCH(
       updateFields.completed_at = new Date().toISOString();
     }
 
-    const { data: target, error } = await supabase
+    const { data: target, error } = await ctx.supabase
       .from('action_targets')
       .update(updateFields)
       .eq('id', id)
-      .eq('org_id', profile.org_id)
+      .eq('org_id', ctx.orgId)
       .select()
       .single();
 
@@ -57,24 +45,14 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const ctx = await getOrgContext();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-    if (!profile?.org_id) return NextResponse.json({ error: 'No org' }, { status: 400 });
-
-    await supabase
+    await ctx.supabase
       .from('action_targets')
       .delete()
       .eq('id', id)
-      .eq('org_id', profile.org_id);
+      .eq('org_id', ctx.orgId);
 
     return NextResponse.json({ success: true });
   } catch {

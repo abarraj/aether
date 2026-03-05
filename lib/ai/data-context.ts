@@ -493,7 +493,7 @@ export async function buildDataContext(orgId: string): Promise<string> {
     }
   }
 
-  // Add active targets context
+  // Add active action targets context (legacy gap-reduction targets)
   try {
     const { data: targetRows } = await supabase
       .from('action_targets')
@@ -529,6 +529,45 @@ export async function buildDataContext(orgId: string): Promise<string> {
     }
   } catch {
     // action_targets table may not exist yet
+  }
+
+  // Add active metric targets context
+  try {
+    const { data: metricTargets } = await supabase
+      .from('targets')
+      .select(
+        'metric_key, dimension_field, dimension_value, period, target_value, comparator, label, current_value, current_met, last_evaluated_at',
+      )
+      .eq('org_id', orgId)
+      .eq('status', 'active');
+
+    if (metricTargets && metricTargets.length > 0) {
+      lines.push('');
+      lines.push('---');
+      lines.push(
+        'METRIC TARGETS (quantitative goals for KPIs)',
+      );
+      lines.push(
+        'These targets are automatically evaluated by the compute engine after each data update.',
+      );
+      lines.push(
+        'When discussing metrics with targets, reference whether the target is being met and the current gap.',
+      );
+      lines.push('');
+      for (const t of metricTargets) {
+        const comp = t.comparator === 'gte' ? '>=' : t.comparator === 'lte' ? '<=' : '=';
+        const status = t.current_met ? 'MET' : 'NOT MET';
+        const currentStr = t.current_value != null ? ` (current: ${Number(t.current_value).toLocaleString()})` : '';
+        const dimStr = t.dimension_value ? ` for ${t.dimension_value} (${t.dimension_field})` : '';
+        lines.push(
+          `- ${t.metric_key} ${comp} ${Number(t.target_value).toLocaleString()}${dimStr} [${t.period}]: ${status}${currentStr}` +
+            (t.label ? ` — "${t.label}"` : ''),
+        );
+      }
+      lines.push('---');
+    }
+  } catch {
+    // targets table may not exist yet
   }
 
   return lines.join('\n');

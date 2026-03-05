@@ -214,6 +214,21 @@ export default function DataManagementSettingsPage() {
     try {
       const upload = deleteTarget;
 
+      // Clean up all child records before deleting the upload.
+      // The DB FK is now ON DELETE CASCADE, but we explicitly delete
+      // here as defense-in-depth.
+      await supabase
+        .from('performance_gaps')
+        .delete()
+        .eq('org_id', org.id)
+        .eq('upload_id', upload.id);
+
+      await supabase
+        .from('entities')
+        .delete()
+        .eq('org_id', org.id)
+        .eq('source_upload_id', upload.id);
+
       await supabase
         .from('data_rows')
         .delete()

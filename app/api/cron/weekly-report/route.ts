@@ -16,9 +16,15 @@ type ProfileRow = {
   } | null;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (cronSecret && request.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
-    const supabase = createAdminClient();
+    const supabase = createAdminClient({ caller: 'cron-weekly-report' });
 
     const { data: profiles } = await supabase
       .from('profiles')

@@ -36,6 +36,7 @@ import {
   Eye,
   EyeOff,
   Network,
+  AlertTriangle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -51,7 +52,18 @@ import type {
   RelationshipType,
 } from '@/types/domain';
 import { cn } from '@/lib/utils';
+import { useUser } from '@/hooks/use-user';
 import { EntityDetailPanel } from '@/components/data/entity-detail-panel';
+
+/** Strip surrounding quotes from entity names (CSV artifacts). */
+function displayName(name: string): string {
+  let s = name;
+  // Remove matching surrounding double or single quotes
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  return s.trim();
+}
 
 function formatPropertyValue(value: unknown, type: PropertyType): string {
   if (value == null) return '—';
@@ -89,9 +101,9 @@ function entityPropertiesSorted(entity: Entity, entityType: EntityType): { key: 
 
 function entityInlineSummary(entity: Entity, entityType: EntityType, max = 3): string {
   const sorted = entityPropertiesSorted(entity, entityType).slice(0, max);
-  if (sorted.length === 0) return entity.name;
+  if (sorted.length === 0) return displayName(entity.name);
   const parts = sorted.map((p) => `${p.label}: ${formatPropertyValue(p.value, p.type)}`);
-  return `${entity.name} — ${parts.join(' · ')}`;
+  return `${displayName(entity.name)} — ${parts.join(' · ')}`;
 }
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -169,28 +181,134 @@ function slugFromLabel(label: string): string {
     .replace(/^_|_$/g, '') || 'field';
 }
 
-// ----- Graph layout: circular positions for entity types
-function useGraphLayout(entityTypes: EntityType[]) {
-  const NODE_WIDTH = 200;
-  const NODE_HEIGHT = 72;
-  const PADDING = 80;
-  const RADIUS = 220;
+// ── Graph Console Theme Tokens ──────────────────────────────────────
+const GRAPH = {
+  bg: '#090909',
+  gridDot: '#1a1a1a',
+  gridSize: 20,
+  edgeDefault: '#2a2a2e',
+  edgeActive: '#3f3f46',
+  edgeLabel: '#71717a',
+  edgeLabelBg: '#0f0f11',
+  nodeBg: '#0f0f11',
+  nodeBorder: '#1f1f23',
+  nodeSelectedBorder: 'rgba(16,185,129,0.4)',
+  nodeTextPrimary: '#e4e4e7',
+  nodeTextSecondary: '#71717a',
+  nodeTextMetric: '#a1a1aa',
+  // Desaturate entity colors: full for icon, muted for accents
+  accentOpacity: 0.45,
+  bgTintOpacity: 0.08,
+} as const;
+
+// ── Node size tiers based on entity count ───────────────────────────
+interface NodeSize { w: number; h: number; tier: 'lg' | 'md' | 'sm' }
+
+function getNodeSize(count: number, maxCount: number): NodeSize {
+  if (maxCount === 0) return { w: 200, h: 90, tier: 'md' };
+  const ratio = count / maxCount;
+  if (ratio >= 0.5) return { w: 240, h: 110, tier: 'lg' };
+  if (ratio >= 0.2) return { w: 200, h: 90, tier: 'md' };
+  return { w: 170, h: 74, tier: 'sm' };
+}
+
+// ── Aggregate micro-metrics for an entity type ──────────────────────
+interface MicroMetrics {
+  items: { label: string; value: string }[];
+}
+
+function computeMicroMetrics(
+  entityType: EntityType,
+  typeEntities: Entity[],
+): MicroMetrics {
+  if (typeEntities.length === 0) return { items: [] };
+
+  const numericProps = entityType.properties.filter(
+    (p) => p.type === 'currency' || p.type === 'number' || p.type === 'percentage',
+  );
+
+  const items: { label: string; value: string; raw: number }[] = [];
+  for (const prop of numericProps) {
+    const values = typeEntities
+      .map((e) => {
+        const v = (e.properties as Record<string, unknown>)?.[prop.key];
+        return typeof v === 'number' ? v : Number(v);
+      })
+      .filter((v) => !Number.isNaN(v));
+
+    if (values.length === 0) continue;
+
+    if (prop.type === 'percentage') {
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      items.push({ label: prop.label, value: `${avg.toFixed(0)}%`, raw: avg });
+    } else if (prop.type === 'currency') {
+      const total = values.reduce((a, b) => a + b, 0);
+      const formatted = total >= 1000
+        ? `$${(total / 1000).toFixed(0)}k`
+        : `$${total.toFixed(0)}`;
+      items.push({ label: prop.label, value: formatted, raw: total });
+    } else {
+      const total = values.reduce((a, b) => a + b, 0);
+      const formatted = total >= 1000
+        ? `${(total / 1000).toFixed(1)}k`
+        : `${total.toFixed(0)}`;
+      items.push({ label: prop.label, value: formatted, raw: total });
+    }
+  }
+
+  // Sort by absolute raw value descending, take top 2
+  items.sort((a, b) => Math.abs(b.raw) - Math.abs(a.raw));
+  return { items: items.slice(0, 2).map(({ label, value }) => ({ label, value })) };
+}
+
+// ── Graph layout: hierarchical circular positions ───────────────────
+function useGraphLayout(
+  entityTypes: EntityType[],
+  entities: Entity[],
+  relationshipCountByType: Record<string, number>,
+) {
+  const PADDING = 100;
+  const BASE_RADIUS = 260;
 
   return useMemo(() => {
     const n = entityTypes.length;
     const positions: Record<string, { x: number; y: number }> = {};
-    if (n === 0) return { positions, width: 600, height: 400 };
+    const nodeSizes: Record<string, NodeSize> = {};
+
+    if (n === 0) return { positions, nodeSizes, width: 600, height: 400 };
+
+    // Compute entity counts per type + max
+    const counts: Record<string, number> = {};
+    let maxCount = 0;
+    for (const et of entityTypes) {
+      const c = entities.filter((e) => e.entity_type_id === et.id).length;
+      counts[et.id] = c;
+      if (c > maxCount) maxCount = c;
+    }
+
+    // Compute sizes
+    for (const et of entityTypes) {
+      nodeSizes[et.id] = getNodeSize(counts[et.id], maxCount);
+    }
+
+    // Place in circle, but pull more-connected nodes inward
+    const maxRels = Math.max(1, ...Object.values(relationshipCountByType));
     entityTypes.forEach((et, i) => {
       const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+      const relCount = relationshipCountByType[et.id] ?? 0;
+      // More connections → closer to center (up to 30% inward)
+      const pullFactor = 1 - (relCount / maxRels) * 0.3;
+      const r = BASE_RADIUS * pullFactor;
       positions[et.id] = {
-        x: PADDING + RADIUS + RADIUS * Math.cos(angle),
-        y: PADDING + RADIUS + RADIUS * Math.sin(angle),
+        x: PADDING + BASE_RADIUS + r * Math.cos(angle),
+        y: PADDING + BASE_RADIUS + r * Math.sin(angle),
       };
     });
-    const width = PADDING * 2 + RADIUS * 2;
-    const height = PADDING * 2 + RADIUS * 2;
-    return { positions, width, height, nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT };
-  }, [entityTypes]);
+
+    const width = PADDING * 2 + BASE_RADIUS * 2;
+    const height = PADDING * 2 + BASE_RADIUS * 2;
+    return { positions, nodeSizes, width, height };
+  }, [entityTypes, entities, relationshipCountByType]);
 }
 
 export default function DataModelPage() {
@@ -239,13 +357,192 @@ export default function DataModelPage() {
   const previousNameRef = useRef('');
   const previousDescRef = useRef('');
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+
+  // ── Review banner state ─────────────────────────────────────────────
+  const [pendingReview, setPendingReview] = useState<{
+    mappingRunId: string;
+    questions: { id: string; type: string; question: string; suggestion: string; confidence: number; affectedRows: number }[];
+  } | null>(null);
+  const [reviewDismissed, setReviewDismissed] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from('mapping_runs')
+      .select('id, review_questions')
+      .eq('needs_review', true)
+      .eq('review_status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data }: { data: { id: string; review_questions: unknown[] }[] | null }) => {
+        if (data && data.length > 0 && Array.isArray(data[0]!.review_questions) && data[0]!.review_questions.length > 0) {
+          setPendingReview({
+            mappingRunId: data[0]!.id,
+            questions: data[0]!.review_questions as { id: string; type: string; question: string; suggestion: string; confidence: number; affectedRows: number }[],
+          });
+        }
+      });
+  }, [entities.length]); // re-fetch when entities change (after upload)
+
+  // ── Graph interaction state ─────────────────────────────────────────
+  const { org } = useUser();
+  const graphContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Pan + Zoom
+  const [graphScale, setGraphScale] = useState(1);
+  const [graphTranslate, setGraphTranslate] = useState({ x: 0, y: 0 });
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
+
+  // Drag
+  const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const isDragging = useRef<string | null>(null);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const dragMoved = useRef(false);
+
+  // Undo stack for drag positions
+  const undoStack = useRef<Array<Record<string, { x: number; y: number }>>>([]);
+
+  // Load persisted positions
+  useEffect(() => {
+    if (!org) return;
+    try {
+      const stored = localStorage.getItem(`aether_graph_positions_${org.id}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (typeof parsed === 'object' && parsed !== null) {
+          setDragPositions(parsed);
+        }
+      }
+    } catch {
+      // Non-blocking
+    }
+  }, [org]);
+
+  // Persist positions on change (debounced)
+  const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!org || Object.keys(dragPositions).length === 0) return;
+    if (persistTimeout.current) clearTimeout(persistTimeout.current);
+    persistTimeout.current = setTimeout(() => {
+      try {
+        localStorage.setItem(`aether_graph_positions_${org.id}`, JSON.stringify(dragPositions));
+      } catch {
+        // Non-blocking
+      }
+    }, 300);
+    return () => {
+      if (persistTimeout.current) clearTimeout(persistTimeout.current);
+    };
+  }, [dragPositions, org]);
+
+  // Keyboard undo: Ctrl/Cmd+Z
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && activeTab === 'graph') {
+        e.preventDefault();
+        const prev = undoStack.current.pop();
+        if (prev) {
+          setDragPositions(prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeTab]);
+
+  const handleResetLayout = () => {
+    undoStack.current.push({ ...dragPositions });
+    setDragPositions({});
+    setGraphScale(1);
+    setGraphTranslate({ x: 0, y: 0 });
+    if (org) {
+      try {
+        localStorage.removeItem(`aether_graph_positions_${org.id}`);
+      } catch {
+        // Non-blocking
+      }
+    }
+  };
+
+  // Pan handlers
+  const handlePanStart = useCallback((e: React.MouseEvent) => {
+    // Middle-click or Ctrl+left-click starts pan
+    if (e.button === 1 || (e.button === 0 && (e.ctrlKey || e.metaKey))) {
+      e.preventDefault();
+      isPanning.current = true;
+      panStart.current = { x: e.clientX, y: e.clientY, tx: graphTranslate.x, ty: graphTranslate.y };
+    }
+  }, [graphTranslate]);
+
+  const handlePanMove = useCallback((e: React.MouseEvent) => {
+    if (isPanning.current) {
+      const dx = e.clientX - panStart.current.x;
+      const dy = e.clientY - panStart.current.y;
+      setGraphTranslate({ x: panStart.current.tx + dx, y: panStart.current.ty + dy });
+    }
+    if (isDragging.current) {
+      dragMoved.current = true;
+      const nodeId = isDragging.current;
+      const rect = graphContainerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const x = (e.clientX - rect.left - graphTranslate.x) / graphScale - dragOffset.current.x;
+        const y = (e.clientY - rect.top - graphTranslate.y) / graphScale - dragOffset.current.y;
+        setDragPositions((prev) => ({ ...prev, [nodeId]: { x, y } }));
+      }
+    }
+  }, [graphScale, graphTranslate]);
+
+  const handlePanEnd = useCallback(() => {
+    isPanning.current = false;
+    if (isDragging.current) {
+      // If we didn't actually move, pop the undo stack (we pushed on mousedown)
+      if (!dragMoved.current && undoStack.current.length > 0) {
+        undoStack.current.pop();
+      }
+      isDragging.current = null;
+    }
+  }, []);
+
+  // Zoom handler — attached via React onWheel (passive: false by default in React)
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const delta = -e.deltaY * 0.0015;
+    setGraphScale((prev) => Math.min(2, Math.max(0.4, prev + delta)));
+  }, []);
+
+  // Node drag start
+  const handleNodeDragStart = useCallback((e: React.MouseEvent, nodeId: string, nodePos: { x: number; y: number }) => {
+    if (e.ctrlKey || e.metaKey || e.button !== 0) return; // Don't drag during pan
+    e.stopPropagation();
+    const rect = graphContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mouseX = (e.clientX - rect.left - graphTranslate.x) / graphScale;
+    const mouseY = (e.clientY - rect.top - graphTranslate.y) / graphScale;
+    dragOffset.current = { x: mouseX - nodePos.x, y: mouseY - nodePos.y };
+    undoStack.current.push({ ...dragPositions });
+    if (undoStack.current.length > 20) undoStack.current.shift();
+    isDragging.current = nodeId;
+    dragMoved.current = false;
+  }, [graphScale, graphTranslate, dragPositions]);
+
+  // Compute connected node IDs for selection focus
+  const connectedNodeIds = useMemo(() => {
+    if (!selectedTypeId) return null;
+    const ids = new Set<string>([selectedTypeId]);
+    for (const rel of relationshipTypes) {
+      if (rel.from_type_id === selectedTypeId) ids.add(rel.to_type_id);
+      if (rel.to_type_id === selectedTypeId) ids.add(rel.from_type_id);
+    }
+    return ids;
+  }, [selectedTypeId, relationshipTypes]);
 
   const selectedType = selectedTypeId ? (entityTypes.find((et) => et.id === selectedTypeId) || null) : null;
   const entitiesForType = selectedType
     ? entities.filter((e) => e.entity_type_id === selectedType.id)
     : [];
-  const { positions, width, height, nodeWidth, nodeHeight } = useGraphLayout(entityTypes);
-
   const relationshipCountByType = useMemo(() => {
     const map: Record<string, number> = {};
     entityTypes.forEach((et) => {
@@ -255,6 +552,8 @@ export default function DataModelPage() {
     });
     return map;
   }, [entityTypes, relationshipTypes]);
+
+  const { positions, nodeSizes, width, height } = useGraphLayout(entityTypes, entities, relationshipCountByType);
 
   const selectedEntity = selectedEntityId
     ? entities.find((e) => e.id === selectedEntityId) ?? null
@@ -277,7 +576,7 @@ export default function DataModelPage() {
             const key = `${fromEntity.id}:${toEntity.id}`;
             if (seen.has(key)) return;
             seen.add(key);
-            items.push({ from: fromEntity.name, to: toEntity.name });
+            items.push({ from: displayName(fromEntity.name), to: displayName(toEntity.name) });
           });
           if (items.length === 0) return null;
           return { type: relType, items };
@@ -392,9 +691,9 @@ export default function DataModelPage() {
         const fromEntity = entities.find((e) => e.id === r.from_entity_id);
         const toEntity = entities.find((e) => e.id === r.to_entity_id);
         if (r.from_entity_id === entityId && toEntity) {
-          out.push({ relName: relType?.name ?? '', targetName: toEntity.name });
+          out.push({ relName: relType?.name ?? '', targetName: displayName(toEntity.name) });
         } else if (r.to_entity_id === entityId && fromEntity) {
-          out.push({ relName: relType?.name ?? '', targetName: fromEntity.name });
+          out.push({ relName: relType?.name ?? '', targetName: displayName(fromEntity.name) });
         }
       });
       return out;
@@ -511,6 +810,48 @@ export default function DataModelPage() {
         </button>
       </div>
 
+      {/* Review banner — shown when role inference flagged ambiguity */}
+      {pendingReview && !reviewDismissed && (
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-5 py-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-amber-300">
+                  Review needed
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReviewDismissed(true)}
+                  className="text-xs text-slate-500 hover:text-slate-300"
+                >
+                  Dismiss
+                </button>
+              </div>
+              <div className="mt-1.5 space-y-1.5">
+                {pendingReview.questions.slice(0, 3).map((q) => (
+                  <div key={q.id} className="flex items-start gap-2 text-xs text-slate-400">
+                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500/60" />
+                    <span>
+                      {q.question}
+                      {q.suggestion && (
+                        <span className="ml-1.5 text-amber-400/70">(Suggested: {q.suggestion})</span>
+                      )}
+                      <span className="ml-1.5 text-slate-500">({q.affectedRows} rows)</span>
+                    </span>
+                  </div>
+                ))}
+                {pendingReview.questions.length > 3 && (
+                  <p className="text-xs text-slate-500">
+                    +{pendingReview.questions.length - 3} more items
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {entityTypes.length > 0 &&
         entities.some((e) => e.source_upload_id) && (
           <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-5 py-4">
@@ -590,8 +931,9 @@ export default function DataModelPage() {
                   const sortedMetrics = [...metrics].sort((a, b) => b.numeric - a.numeric);
                   const totalValue = sortedMetrics.reduce((sum, m) => sum + m.numeric, 0);
                   const maxValue = sortedMetrics[0]?.numeric ?? 0;
-                  const visibleMetrics = sortedMetrics.slice(0, 5);
-                  const remainingCount = sortedMetrics.length - visibleMetrics.length;
+                  const isExpanded = expandedCards.has(et.id);
+                  const visibleMetrics = isExpanded ? sortedMetrics : sortedMetrics.slice(0, 5);
+                  const remainingCount = isExpanded ? 0 : sortedMetrics.length - visibleMetrics.length;
                   const primaryType = sortedMetrics[0]?.primary.type;
                   const formatTotal = (value: number) =>
                     primaryType
@@ -655,7 +997,7 @@ export default function DataModelPage() {
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <span className="truncate text-sm font-medium text-slate-200">
-                                      {m.entity.name}
+                                      {displayName(m.entity.name)}
                                     </span>
                                     <span className="text-sm font-semibold text-slate-100">
                                       {formatPropertyValue(
@@ -685,14 +1027,30 @@ export default function DataModelPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const next = sortedMetrics
-                                    .slice(visibleMetrics.length)
-                                    .map((m) => m.entity.id)[0];
-                                  if (next) setSelectedEntityId(next);
+                                  setExpandedCards((prev) => {
+                                    const next = new Set(prev);
+                                    next.add(et.id);
+                                    return next;
+                                  });
                                 }}
                                 className="w-full px-3 py-2 text-center text-xs text-slate-500 hover:bg-zinc-900/70 rounded-b-2xl"
                               >
                                 + {remainingCount} more
+                              </button>
+                            )}
+                            {isExpanded && sortedMetrics.length > 5 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedCards((prev) => {
+                                    const next = new Set(prev);
+                                    next.delete(et.id);
+                                    return next;
+                                  });
+                                }}
+                                className="w-full px-3 py-2 text-center text-xs text-slate-500 hover:bg-zinc-900/70 rounded-b-2xl"
+                              >
+                                Show less
                               </button>
                             )}
                           </div>
@@ -737,8 +1095,9 @@ export default function DataModelPage() {
                   </h3>
                   <div className="space-y-3">
                     {relationshipGroups.map((group) => {
-                      const visible = group.items.slice(0, 5);
-                      const extra = group.items.length - visible.length;
+                      const relExpanded = expandedCards.has(`rel:${group.type.id}`);
+                      const visible = relExpanded ? group.items : group.items.slice(0, 5);
+                      const extra = relExpanded ? 0 : group.items.length - visible.length;
                       return (
                         <div key={group.type.id} className="space-y-1.5">
                           <div className="text-xs font-medium text-slate-400">
@@ -769,11 +1128,30 @@ export default function DataModelPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setActiveTab('graph');
+                                  setExpandedCards((prev) => {
+                                    const next = new Set(prev);
+                                    next.add(`rel:${group.type.id}`);
+                                    return next;
+                                  });
                                 }}
                                 className="text-xs text-slate-500 hover:text-slate-300"
                               >
                                 + {extra} more
+                              </button>
+                            )}
+                            {relExpanded && group.items.length > 5 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedCards((prev) => {
+                                    const next = new Set(prev);
+                                    next.delete(`rel:${group.type.id}`);
+                                    return next;
+                                  });
+                                }}
+                                className="text-xs text-slate-500 hover:text-slate-300"
+                              >
+                                Show less
                               </button>
                             )}
                           </div>
@@ -789,15 +1167,72 @@ export default function DataModelPage() {
       )}
 
       {activeTab === 'graph' && (
-        <div className="flex gap-0 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0A0A0A] shadow-[0_0_0_1px_rgba(24,24,27,0.9)]">
+        <div className="flex gap-0 overflow-hidden rounded-2xl border border-zinc-800 shadow-[0_0_0_1px_rgba(24,24,27,0.9)]" style={{ backgroundColor: GRAPH.bg }}>
           <div
-            className="relative flex-1 overflow-auto"
+            ref={graphContainerRef}
+            className="relative flex-1 overflow-hidden select-none"
             style={{
-              backgroundImage: 'radial-gradient(circle, #1a1a2e 1px, transparent 1px)',
-              backgroundSize: '24px 24px',
+              backgroundImage: `radial-gradient(circle, ${GRAPH.gridDot} 0.75px, transparent 0.75px)`,
+              backgroundSize: `${GRAPH.gridSize}px ${GRAPH.gridSize}px`,
               minHeight: 560,
+              boxShadow: 'inset 0 0 80px 40px rgba(0,0,0,0.35)',
+              cursor: isPanning.current ? 'grabbing' : 'default',
+            }}
+            onMouseDown={handlePanStart}
+            onMouseMove={handlePanMove}
+            onMouseUp={handlePanEnd}
+            onMouseLeave={handlePanEnd}
+            onWheel={handleWheel}
+            onContextMenu={(e) => e.preventDefault()}
+            onClick={(e) => {
+              // Click on background (not on a node) deselects
+              if (e.target === e.currentTarget || e.target === graphContainerRef.current) {
+                setSelectedTypeId(null);
+              }
             }}
           >
+            {/* Graph controls */}
+            <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setGraphScale((s) => Math.min(2, s + 0.15))}
+                className="rounded-lg border border-zinc-700/50 px-2 py-1 text-[10px] font-mono text-slate-400 hover:bg-zinc-800/50 hover:text-slate-300 transition-colors"
+                style={{ backgroundColor: GRAPH.edgeLabelBg }}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => setGraphScale((s) => Math.max(0.4, s - 0.15))}
+                className="rounded-lg border border-zinc-700/50 px-2 py-1 text-[10px] font-mono text-slate-400 hover:bg-zinc-800/50 hover:text-slate-300 transition-colors"
+                style={{ backgroundColor: GRAPH.edgeLabelBg }}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={handleResetLayout}
+                className="rounded-lg border border-zinc-700/50 px-2.5 py-1 text-[10px] text-slate-500 hover:bg-zinc-800/50 hover:text-slate-300 transition-colors"
+                style={{ backgroundColor: GRAPH.edgeLabelBg }}
+              >
+                Reset
+              </button>
+              <span className="ml-1 text-[9px] font-mono tabular-nums text-slate-600">
+                {Math.round(graphScale * 100)}%
+              </span>
+            </div>
+
+            {/* Interaction hints */}
+            {entityTypes.length > 0 && (
+              <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 text-[9px] text-slate-600">
+                <span>Drag nodes to arrange</span>
+                <span>·</span>
+                <span>Scroll to zoom</span>
+                <span>·</span>
+                <span>Ctrl+Z to undo</span>
+              </div>
+            )}
+
             {entityTypes.length === 0 ? (
               <div className="flex h-[520px] flex-col items-center justify-center gap-4 px-8 text-center">
                 <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-8 max-w-md">
@@ -816,78 +1251,219 @@ export default function DataModelPage() {
             ) : (
               <>
                 <div
-                  className="relative shrink-0"
-                  style={{ width, height, minHeight: height }}
+                  className="relative shrink-0 origin-top-left transition-transform duration-75"
+                  style={{
+                    width,
+                    height,
+                    minHeight: height,
+                    transform: `translate(${graphTranslate.x}px, ${graphTranslate.y}px) scale(${graphScale})`,
+                  }}
                 >
                   <svg
                     className="absolute left-0 top-0 pointer-events-none"
                     width={width}
                     height={height}
                   >
-                    {relationshipTypes.map((rel) => {
-                      const fromPos = positions[rel.from_type_id];
-                      const toPos = positions[rel.to_type_id];
-                      if (!fromPos || !toPos) return null;
-                      const x1 = fromPos.x;
-                      const y1 = fromPos.y;
-                      const x2 = toPos.x;
-                      const y2 = toPos.y;
-                      const midX = (x1 + x2) / 2;
-                      const midY = (y1 + y2) / 2;
-                      return (
-                        <g key={rel.id}>
-                          <line
-                            x1={x1}
-                            y1={y1}
-                            x2={x2}
-                            y2={y2}
-                            stroke="#52525b"
-                            strokeWidth={1}
-                          />
-                          <text
-                            x={midX}
-                            y={midY}
-                            textAnchor="middle"
-                            dominantBaseline="middle"
-                            fill="#94a3b8"
-                            style={{ fontSize: 10, fontWeight: 500 }}
-                          >
-                            {rel.name}
-                          </text>
-                        </g>
-                      );
-                    })}
+                    {/* Arrow marker definition */}
+                    <defs>
+                      <marker
+                        id="graph-arrow"
+                        viewBox="0 0 6 4"
+                        refX="5"
+                        refY="2"
+                        markerWidth="6"
+                        markerHeight="4"
+                        orient="auto"
+                      >
+                        <path d="M0,0 L6,2 L0,4 Z" fill={GRAPH.edgeDefault} />
+                      </marker>
+                      <marker
+                        id="graph-arrow-active"
+                        viewBox="0 0 6 4"
+                        refX="5"
+                        refY="2"
+                        markerWidth="6"
+                        markerHeight="4"
+                        orient="auto"
+                      >
+                        <path d="M0,0 L6,2 L0,4 Z" fill={GRAPH.edgeActive} />
+                      </marker>
+                    </defs>
+                    {(() => {
+                      // Count how many relationship types share the same node pair
+                      const pairCounts = new Map<string, number>();
+                      const pairIndex = new Map<string, number>();
+                      for (const rel of relationshipTypes) {
+                        const key = [rel.from_type_id, rel.to_type_id].sort().join(':');
+                        pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1);
+                      }
+
+                      return relationshipTypes.map((rel) => {
+                        const fromPos = dragPositions[rel.from_type_id] ?? positions[rel.from_type_id];
+                        const toPos = dragPositions[rel.to_type_id] ?? positions[rel.to_type_id];
+                        if (!fromPos || !toPos) return null;
+
+                        // Selection focus: fade edges not connected to selected node
+                        const isEdgeConnected = !connectedNodeIds || (connectedNodeIds.has(rel.from_type_id) && connectedNodeIds.has(rel.to_type_id));
+                        const edgeFocusOpacity = connectedNodeIds ? (isEdgeConnected ? 1 : 0.12) : 1;
+
+                        // Count actual entity relationships for this relationship type
+                        const relEntityCount = relationships.filter(
+                          (r) => r.relationship_type_id === rel.id,
+                        ).length;
+
+                        // Encode strength
+                        const strokeWidth = relEntityCount >= 21 ? 2.5 : relEntityCount >= 6 ? 1.5 : 1;
+                        const strokeOpacity = Math.min(0.7, 0.25 + (relEntityCount / 30) * 0.45);
+
+                        // Handle parallel edges — offset with Bézier curve
+                        const pairKey = [rel.from_type_id, rel.to_type_id].sort().join(':');
+                        const totalForPair = pairCounts.get(pairKey) ?? 1;
+                        const currentIdx = pairIndex.get(pairKey) ?? 0;
+                        pairIndex.set(pairKey, currentIdx + 1);
+
+                        const x1 = fromPos.x;
+                        const y1 = fromPos.y;
+                        const x2 = toPos.x;
+                        const y2 = toPos.y;
+
+                        // Compute perpendicular offset for parallel edges
+                        const dx = x2 - x1;
+                        const dy = y2 - y1;
+                        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const nx = -dy / len; // perpendicular unit vector
+                        const ny = dx / len;
+                        const offsetAmount = totalForPair > 1
+                          ? (currentIdx - (totalForPair - 1) / 2) * 28
+                          : 0;
+
+                        const cx = (x1 + x2) / 2 + nx * offsetAmount;
+                        const cy = (y1 + y2) / 2 + ny * offsetAmount;
+
+                        // Label position (on the curve midpoint)
+                        const labelX = cx;
+                        const labelY = cy;
+
+                        const useCurve = totalForPair > 1;
+                        const pathD = useCurve
+                          ? `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`
+                          : `M ${x1} ${y1} L ${x2} ${y2}`;
+
+                        return (
+                          <g key={rel.id} style={{ opacity: edgeFocusOpacity, transition: 'opacity 200ms ease' }}>
+                            <path
+                              d={pathD}
+                              fill="none"
+                              stroke={GRAPH.edgeDefault}
+                              strokeWidth={strokeWidth}
+                              strokeOpacity={strokeOpacity}
+                              markerEnd="url(#graph-arrow)"
+                            />
+                            {/* Label background pill */}
+                            <rect
+                              x={labelX - (rel.name.length * 3.2 + 16)}
+                              y={labelY - 8}
+                              width={rel.name.length * 6.4 + 32}
+                              height={16}
+                              rx={4}
+                              fill={GRAPH.edgeLabelBg}
+                              stroke={GRAPH.nodeBorder}
+                              strokeWidth={0.5}
+                            />
+                            <text
+                              x={labelX}
+                              y={labelY}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fill={GRAPH.edgeLabel}
+                              style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.01em' }}
+                            >
+                              {rel.name}{relEntityCount > 0 ? ` (${relEntityCount})` : ''}
+                            </text>
+                          </g>
+                        );
+                      });
+                    })()}
                   </svg>
                   <div className="absolute left-0 top-0" style={{ width, height }}>
                   {entityTypes.map((et) => {
-                    const pos = positions[et.id];
-                    if (!pos) return null;
+                    const layoutPos = positions[et.id];
+                    if (!layoutPos) return null;
+                    const nodePos = dragPositions[et.id] ?? layoutPos;
                     const IconComponent = ICON_MAP[et.icon.toLowerCase()] ?? Circle;
-                    const count = entities.filter((e) => e.entity_type_id === et.id).length;
+                    const typeEntities = entities.filter((e) => e.entity_type_id === et.id);
+                    const count = typeEntities.length;
                     const isSelected = selectedTypeId === et.id;
+                    const size = nodeSizes[et.id] ?? { w: 200, h: 90, tier: 'md' };
+                    const micro = computeMicroMetrics(et, typeEntities);
+                    const relCount = relationshipCountByType[et.id] ?? 0;
+                    const maxEntityCount = Math.max(1, ...entityTypes.map((t) => entities.filter((e) => e.entity_type_id === t.id).length));
+                    const barPct = Math.round((count / maxEntityCount) * 100);
+
+                    // Selection focus: fade nodes not connected to selected
+                    const isConnected = !connectedNodeIds || connectedNodeIds.has(et.id);
+                    const nodeFocusOpacity = connectedNodeIds ? (isConnected ? 1 : 0.25) : 1;
+
                     return (
                       <button
                         key={et.id}
                         type="button"
-                        onClick={() => setSelectedTypeId(et.id)}
-                        className="absolute rounded-2xl border bg-zinc-950/95 shadow-lg transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                        onClick={() => {
+                          if (!dragMoved.current) setSelectedTypeId(et.id);
+                        }}
+                        onMouseDown={(e) => handleNodeDragStart(e, et.id, nodePos)}
+                        className="absolute rounded-xl border shadow-md focus:outline-none"
                         style={{
-                          left: pos.x - (nodeWidth ?? 200) / 2,
-                          top: pos.y - (nodeHeight ?? 72) / 2,
-                          width: nodeWidth,
-                          height: nodeHeight,
-                          borderColor: isSelected ? '#10B981' : '#27272a',
-                          backgroundColor: `${et.color}14`,
-                          borderLeftWidth: '4px',
-                          borderLeftColor: et.color,
+                          left: nodePos.x - size.w / 2,
+                          top: nodePos.y - size.h / 2,
+                          width: size.w,
+                          height: size.h,
+                          borderColor: isSelected ? GRAPH.nodeSelectedBorder : GRAPH.nodeBorder,
+                          backgroundColor: GRAPH.nodeBg,
+                          borderLeftWidth: '3px',
+                          borderLeftColor: `color-mix(in srgb, ${et.color} ${Math.round(GRAPH.accentOpacity * 100)}%, transparent)`,
+                          opacity: nodeFocusOpacity,
+                          transition: 'opacity 200ms ease, border-color 150ms ease',
+                          cursor: isDragging.current === et.id ? 'grabbing' : 'grab',
                         }}
                       >
-                        <div className="flex items-center gap-2 px-3 py-2">
-                          <IconComponent className="h-5 w-5 shrink-0" style={{ color: et.color }} />
-                          <span className="truncate text-sm font-medium text-slate-100">{et.name}</span>
-                          <span className="ml-auto rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-slate-400">
-                            {count}
-                          </span>
+                        <div className="flex flex-col gap-1 px-3 py-2 h-full justify-center">
+                          {/* Row 1: icon + name + count */}
+                          <div className="flex items-center gap-2">
+                            <IconComponent className="h-3.5 w-3.5 shrink-0" style={{ color: et.color }} />
+                            <span className="truncate text-xs font-semibold leading-tight" style={{ color: GRAPH.nodeTextPrimary }}>{et.name}</span>
+                            <span className="ml-auto rounded bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-mono tabular-nums" style={{ color: GRAPH.nodeTextSecondary }}>
+                              {count}
+                            </span>
+                          </div>
+                          {/* Row 2: micro-metrics */}
+                          {micro.items.length > 0 && (
+                            <div className="flex items-center gap-2 pl-5.5">
+                              {micro.items.map((m, mi) => (
+                                <span key={mi} className="text-[10px] tabular-nums" style={{ color: GRAPH.nodeTextMetric }}>
+                                  {m.value} <span style={{ color: GRAPH.nodeTextSecondary }}>{m.label.toLowerCase()}</span>
+                                  {mi < micro.items.length - 1 && <span className="mx-0.5" style={{ color: GRAPH.nodeBorder }}>·</span>}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {/* Row 3: mini bar + connections */}
+                          <div className="flex items-center gap-2 pl-5.5">
+                            <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${barPct}%`,
+                                  backgroundColor: `color-mix(in srgb, ${et.color} 40%, transparent)`,
+                                }}
+                              />
+                            </div>
+                            {relCount > 0 && (
+                              <span className="text-[9px] tabular-nums whitespace-nowrap" style={{ color: GRAPH.nodeTextSecondary }}>
+                                {relCount} conn
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </button>
                     );

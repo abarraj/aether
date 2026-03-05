@@ -1,50 +1,37 @@
 import { NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
-import { claudeClient } from '@/lib/ai/claude';
+import { getOrgContext } from '@/lib/auth/org-context';
+import { claude } from '@/lib/ai/claude';
 import { buildDataContext } from '@/lib/ai/data-context';
+import { assertAiCreditsAvailable } from '@/lib/billing/queries';
 
-type ProfileOrg = { org_id: string | null };
-
-// Simple in-memory cache
-const cache = new Map<string, { text: string; timestamp: number }>();
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const MODEL_ID = 'claude-sonnet-4-20250514';
 
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const ctx = await getOrgContext();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-    if (!profile?.org_id) return NextResponse.json({ error: 'No org' }, { status: 400 });
-
-    const orgId = profile.org_id;
-
-    // Check cache
-    const cached = cache.get(orgId);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return NextResponse.json({ text: cached.text });
+    // ── Check AI credit limit ────────────────────────────────────
+    const hasCredits = await assertAiCreditsAvailable(ctx.orgId);
+    if (!hasCredits) {
+      return NextResponse.json({ text: null, limitReached: true });
     }
 
-    const { data: org } = await supabase
+    const { data: org } = await ctx.supabase
       .from('organizations')
       .select('name, industry')
-      .eq('id', orgId)
+      .eq('id', ctx.orgId)
       .maybeSingle();
 
-    const dataContext = await buildDataContext(orgId);
+    const dataContext = await buildDataContext(ctx.orgId);
 
     if (!dataContext || dataContext.length < 100) {
       return NextResponse.json({ text: null });
     }
 
-    const completion = await claudeClient.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const completion = await claude().messages.create({
+      model: MODEL_ID,
       max_tokens: 200,
       system:
         `You are the AI COO for ${org?.name ?? 'this business'}, a ${org?.industry ?? 'business'}. ` +
@@ -69,7 +56,23 @@ export async function GET() {
       .join('')
       .trim();
 
-    cache.set(orgId, { text, timestamp: Date.now() });
+    // ── Log AI usage event (1 credit) ────────────────────────────
+    try {
+      const tokensIn = completion.usage?.input_tokens ?? 0;
+      const tokensOut = completion.usage?.output_tokens ?? 0;
+
+      await ctx.supabase.from('ai_usage_events').insert({
+        org_id: ctx.orgId,
+        user_id: ctx.userId,
+        route: 'spotlight',
+        model: MODEL_ID,
+        tokens_in: tokensIn,
+        tokens_out: tokensOut,
+        success: true,
+      });
+    } catch {
+      // Non-blocking: metering failure should never kill spotlight
+    }
 
     return NextResponse.json({ text });
   } catch (err) {

@@ -1,4 +1,4 @@
-// Minimal auth layout centering content on a dark Aether background.
+export const dynamic = 'force-dynamic';
 
 import type { ReactNode } from 'react';
 

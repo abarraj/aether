@@ -1,35 +1,28 @@
 import { NextResponse } from 'next/server';
 
-import { createClient } from '@/lib/supabase/server';
+import { getOrgContext } from '@/lib/auth/org-context';
 import {
   generateWeeklyReport,
   buildReportHtml,
 } from '@/lib/reports/weekly-report';
 import { sendEmail } from '@/lib/email';
 
-type ProfileOrg = { org_id: string | null; email: string | null };
-
 export async function POST() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const ctx = await getOrgContext();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { data: profile } = await supabase
+    const { data: profile } = await ctx.supabase
       .from('profiles')
-      .select('org_id, email')
-      .eq('id', user.id)
-      .maybeSingle<ProfileOrg>();
-    if (!profile?.org_id)
-      return NextResponse.json({ error: 'No org' }, { status: 400 });
+      .select('email')
+      .eq('id', ctx.userId)
+      .maybeSingle<{ email: string | null }>();
 
-    const email = profile.email || user.email;
+    const email = profile?.email;
     if (!email)
       return NextResponse.json({ error: 'No email' }, { status: 400 });
 
-    const reportData = await generateWeeklyReport(profile.org_id);
+    const reportData = await generateWeeklyReport(ctx.orgId);
     if (!reportData)
       return NextResponse.json({ error: 'No data' }, { status: 404 });
 
