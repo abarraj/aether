@@ -109,11 +109,11 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
         return res.json();
       })
       .then((data: { detection: OntologyDetection }) => {
+        // Always store detection — even low-confidence results carry stream type & metrics
+        setDetection(data.detection ?? null);
         if (data.detection && data.detection.confidence > 0.3 && data.detection.entityTypes?.length > 0) {
-          setDetection(data.detection);
           setStep('confirm');
         } else {
-          setDetection(null);
           setStep('customize');
         }
       })
@@ -272,8 +272,13 @@ export function UploadDropzone({ open, onClose, onUploaded }: UploadDropzoneProp
   );
 
   const handleUploadSimple = useCallback(() => {
-    void runUpload('Custom', null, null, null);
-  }, [runUpload]);
+    void runUpload(
+      'Custom',
+      null,
+      null,
+      detection ? (detection as unknown as Record<string, unknown>) : null,
+    );
+  }, [runUpload, detection]);
 
   if (!open) return null;
 
