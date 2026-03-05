@@ -34,6 +34,14 @@ import {
   normalizeDate,
 } from '@/lib/data/date-mapping';
 import { normalizeColumnMapping } from '@/lib/data/normalize-column-mapping';
+import { writeTransactionFacts } from '@/lib/data/facts/transactions';
+import {
+  isStaffRoster,
+  extractStaffFromRoster,
+  extractStaffFromTransactions,
+  writeStaffDirectory,
+} from '@/lib/data/facts/staff';
+import { inferColumnMappings, writeSchemaMemory } from '@/lib/data/facts/schema-memory';
 
 function getClientIp(request: NextRequest): string | null {
   const ipHeader =
@@ -519,18 +527,95 @@ export async function POST(request: NextRequest) {
     }
     await Promise.all(commitPromises);
 
-    // ── Fire-and-forget: heavy compute runs AFTER the response ──────
+    // ── Fire-and-forget: fact layer + heavy compute AFTER response ────
     // These don't block the user. Errors are logged but don't fail the upload.
     const bgOrgId = ctx.orgId;
     const bgUploadId = uploadRecord.id;
-    Promise.all([
-      runComputeJob(bgOrgId, 'upload', bgUploadId).catch((err) =>
-        console.error('Background compute job failed:', err),
-      ),
-      computePerformanceGaps(bgOrgId, bgUploadId).catch((err) =>
-        console.error('Background performance gaps failed:', err),
-      ),
-    ]).catch(() => { /* swallow */ });
+    const bgRows = rows as Record<string, unknown>[];
+    const bgHeaders = bgRows.length > 0 ? Object.keys(bgRows[0]!) : [];
+    const bgColumnMapping = columnMapping;
+    const bgDetection = detectionPayload;
+
+    (async () => {
+      try {
+        // ── 1. Schema memory: learn column mappings ───────────────
+        const schemaMappings = inferColumnMappings(bgHeaders, bgRows.slice(0, 10));
+        if (schemaMappings.length > 0) {
+          await writeSchemaMemory(bgOrgId, bgUploadId, schemaMappings).catch((err) =>
+            console.error('Schema memory write failed:', err),
+          );
+        }
+
+        // ── 2. Classify file type and write facts ─────────────────
+        const isRoster = isStaffRoster(bgHeaders, bgRows);
+        const isTransactional = !isRoster && isTransactionalDataset(bgHeaders);
+
+        if (isRoster) {
+          // Staff roster: extract names → staff_directory
+          const staffEntries = extractStaffFromRoster(bgHeaders, bgRows);
+          if (staffEntries.length > 0) {
+            await writeStaffDirectory(bgOrgId, bgUploadId, staffEntries, 'roster').catch(
+              (err) => console.error('Staff directory write failed:', err),
+            );
+          }
+          console.log(`[upload] Roster file detected: ${staffEntries.length} staff names extracted`);
+        } else if (rowCount > 0) {
+          // Transaction data: build & persist transaction facts
+          const dataRows = bgRows.map((row) => {
+            const rawDate =
+              getMappedValue(row, Object.entries(bgColumnMapping).find(([, role]) => role === 'date')?.[0] ?? null) ??
+              findFallbackDateValue(row);
+            const normalized = normalizeDate(rawDate);
+            return { date: normalized, data: row };
+          });
+
+          const detectedMetrics = bgDetection?.metrics
+            ? (bgDetection.metrics as import('@/lib/ai/ontology-detector').DetectedMetrics)
+            : null;
+
+          const factResult = await writeTransactionFacts(
+            bgOrgId,
+            bgUploadId,
+            dataRows,
+            detectedMetrics,
+            bgColumnMapping,
+          ).catch((err) => {
+            console.error('Transaction facts write failed:', err);
+            return null;
+          });
+
+          // Extract staff names from transactions → staff_directory (source='transaction')
+          if (factResult && factResult.resolvedRevenueColumn) {
+            const userCol = bgHeaders.find((h) => /^user$/i.test(h.trim())) ?? null;
+            const clientCol = bgHeaders.find((h) => /^client$/i.test(h.trim())) ?? null;
+            if (userCol) {
+              const staffFromTx = extractStaffFromTransactions(
+                bgRows.map((r) => ({ data: r })),
+                userCol,
+                clientCol,
+              );
+              if (staffFromTx.length > 0) {
+                await writeStaffDirectory(bgOrgId, bgUploadId, staffFromTx, 'transaction').catch(
+                  (err) => console.error('Staff from transactions write failed:', err),
+                );
+              }
+            }
+          }
+        }
+
+        // ── 3. Legacy compute + performance gaps ──────────────────
+        await Promise.all([
+          runComputeJob(bgOrgId, 'upload', bgUploadId).catch((err) =>
+            console.error('Background compute job failed:', err),
+          ),
+          computePerformanceGaps(bgOrgId, bgUploadId).catch((err) =>
+            console.error('Background performance gaps failed:', err),
+          ),
+        ]);
+      } catch (err) {
+        console.error('Background fact pipeline failed:', err);
+      }
+    })();
 
     // Build review summary for client toast
     const reviewQuestionCount = Array.isArray(inferenceReviewQuestions) ? inferenceReviewQuestions.length : 0;

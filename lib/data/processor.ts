@@ -344,43 +344,70 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
 
   if (rowsError || !rows || rows.length === 0) return;
 
-  // ── For transactions_sales: use TransactionFacts as source of truth ──
+  // ── For transactions_sales: read from persisted transaction_facts ──
+  // The fact layer (lib/data/facts/transactions.ts) writes canonical facts
+  // during upload. We read them here for KPI aggregation — single source of truth.
   if (streamType === 'transactions_sales') {
-    const result = buildTransactionFacts(rows, detectedMetrics, upload.column_mapping);
+    const { data: txFacts, error: txError } = await supabase
+      .from('transaction_facts')
+      .select('date_key, gross_total, is_refund')
+      .eq('org_id', orgId)
+      .eq('upload_id', uploadId)
+      .returns<{ date_key: string; gross_total: number; is_refund: boolean }[]>();
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[processor] TransactionFacts built:', {
-        orgId,
-        uploadId,
-        totalFacts: result.facts.length,
-        dateFormat: result.dateFormat,
-        dateParseFailures: result.dateParseFailures,
-        revenueParseFailures: result.revenueParseFailures,
-        resolvedRevenueColumn: result.resolvedRevenueColumn,
-        resolvedDateColumn: result.resolvedDateColumn,
-        dateRange: result.dateRange,
-      });
-    }
+    if (txError || !txFacts || txFacts.length === 0) {
+      // Fallback: build in-memory if facts not yet written (race condition)
+      const result = buildTransactionFacts(rows, detectedMetrics, upload.column_mapping);
+      if (result.facts.length === 0) {
+        console.warn(`[processor] transactions_sales upload ${uploadId} — no facts available`);
+        return;
+      }
 
-    if (result.facts.length === 0) {
-      console.warn(`[processor] transactions_sales upload ${uploadId} produced 0 facts — date/revenue parsing failed`);
+      const dailyMetrics: MetricAccumulator = {};
+      const weeklyMetrics: MetricAccumulator = {};
+      const monthlyMetrics: MetricAccumulator = {};
+
+      for (const fact of result.facts) {
+        const dateKey = fact.dateKey;
+        const weekKey = formatISO(startOfISOWeek(parseISO(dateKey)), { representation: 'date' });
+        const monthKey = formatISO(startOfMonth(parseISO(dateKey)), { representation: 'date' });
+        accumulate(dailyMetrics, dateKey, { revenue: fact.amountTotal });
+        accumulate(weeklyMetrics, weekKey, { revenue: fact.amountTotal });
+        accumulate(monthlyMetrics, monthKey, { revenue: fact.amountTotal });
+      }
+
+      const fallbackRows = [
+        ...buildSnapshotRows('daily', dailyMetrics, orgId, uploadId),
+        ...buildSnapshotRows('weekly', weeklyMetrics, orgId, uploadId),
+        ...buildSnapshotRows('monthly', monthlyMetrics, orgId, uploadId),
+      ];
+
+      if (fallbackRows.length > 0) {
+        await supabase.from('kpi_snapshots').delete()
+          .eq('org_id', orgId).eq('upload_id', uploadId);
+        for (let i = 0; i < fallbackRows.length; i += 500) {
+          await supabase.from('kpi_snapshots').insert(fallbackRows.slice(i, i + 500));
+        }
+      }
       return;
     }
 
+    // Aggregate from persisted transaction_facts
     const dailyMetrics: MetricAccumulator = {};
     const weeklyMetrics: MetricAccumulator = {};
     const monthlyMetrics: MetricAccumulator = {};
 
-    for (const fact of result.facts) {
-      const dateKey = fact.dateKey;
+    for (const fact of txFacts) {
+      const dateKey = fact.date_key;
       const weekKey = formatISO(startOfISOWeek(parseISO(dateKey)), { representation: 'date' });
       const monthKey = formatISO(startOfMonth(parseISO(dateKey)), { representation: 'date' });
 
-      const metrics: SnapshotMetric = { revenue: fact.amountTotal };
+      // Refunds already have negative gross_total from the fact writer
+      const revenue = fact.is_refund ? -Math.abs(fact.gross_total) : fact.gross_total;
 
-      accumulate(dailyMetrics, dateKey, metrics);
-      accumulate(weeklyMetrics, weekKey, metrics);
-      accumulate(monthlyMetrics, monthKey, metrics);
+      accumulate(dailyMetrics, dateKey, { revenue });
+      accumulate(weeklyMetrics, weekKey, { revenue });
+      accumulate(monthlyMetrics, monthKey, { revenue });
     }
 
     const upsertRows = [
@@ -399,6 +426,8 @@ export async function processUploadData(orgId: string, uploadId: string): Promis
         await supabase.from('kpi_snapshots').insert(batch);
       }
     }
+
+    console.log(`[processor] KPIs from transaction_facts: ${txFacts.length} facts → ${upsertRows.length} snapshots`);
     return;
   }
 

@@ -136,6 +136,32 @@ export default function DataPage() {
           // performance_gaps table may not exist
         }
 
+        // ── Fact layer cascade ──────────────────────────────────────
+        // Delete transaction_facts for this upload
+        try {
+          await supabase
+            .from('transaction_facts')
+            .delete()
+            .eq('upload_id', id)
+            .eq('org_id', org.id);
+        } catch {
+          // transaction_facts table may not exist yet
+        }
+
+        // Delete ONLY roster-sourced staff from this upload.
+        // Transaction-sourced and manual staff are NOT deleted.
+        // schema_memory is NEVER deleted (institutional learning).
+        try {
+          await supabase
+            .from('staff_directory')
+            .delete()
+            .eq('upload_id', id)
+            .eq('org_id', org.id)
+            .eq('source', 'roster');
+        } catch {
+          // staff_directory table may not exist yet
+        }
+
         const { data: usedRelTypeIds } = await supabase
           .from('entity_relationships')
           .select('relationship_type_id')
