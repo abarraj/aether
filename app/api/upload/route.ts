@@ -153,6 +153,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── Server-side detection fallback ──────────────────────────────
+    // If client didn't send detection (or it's very low confidence),
+    // run server-side detection so every upload gets classified.
+    if (!detectionPayload || (detectionPayload.confidence ?? 0) < 0.1) {
+      try {
+        const sampleRows = rows.slice(0, 50) as Record<string, string>[];
+        const headers = sampleRows.length > 0 ? Object.keys(sampleRows[0]) : [];
+        if (headers.length > 0) {
+          const { detectOntology } = await import('@/lib/ai/ontology-detector');
+          detectionPayload = await detectOntology(headers, sampleRows, ctx.orgId);
+        }
+      } catch (detErr) {
+        console.error('Server-side detection fallback failed:', detErr);
+        // Non-fatal: continue without detection
+      }
+    }
+
     // ── STAGE: Staging ──────────────────────────────────────────────
     let streamId: string | null = existingStream?.id ?? null;
 

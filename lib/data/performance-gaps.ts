@@ -1,6 +1,8 @@
 // Smart performance gap engine.
 // Auto-detects dimensions from entity_types (ontology detection results)
 // and computes actual vs expected revenue by dimension × week.
+//
+// PRIORITY: AI-detected revenue columns > hardcoded REVENUE_CANDIDATES.
 
 import { parseISO, startOfISOWeek } from 'date-fns';
 import { createClient } from '@/lib/supabase/server';
@@ -16,8 +18,35 @@ function normKey(v: string): string {
 
 function parseNum(val: unknown): number {
   if (val == null) return 0;
-  const n = typeof val === 'number' ? val : Number(String(val).replace(/[,$]/g, ''));
+  if (typeof val === 'number') return Number.isNaN(val) ? 0 : val;
+  const s = String(val).trim();
+  // Parenthetical negatives: (500) => -500
+  const parenMatch = /^\(([0-9.,]+)\)$/.exec(s);
+  const cleaned = parenMatch
+    ? `-${parenMatch[1]}`
+    : s.replace(/[$€£,\s%]/g, '');
+  const n = Number(cleaned);
   return Number.isNaN(n) ? 0 : n;
+}
+
+/**
+ * Resolve an AI-detected column name to the actual key in a data row.
+ * Handles case, underscores vs spaces, and partial containment.
+ */
+function resolveRevenueHeader(detected: string, dataKeys: string[]): string | null {
+  if (!detected) return null;
+  const dNorm = normKey(detected).replace(/_/g, ' ');
+  for (const k of dataKeys) {
+    if (normKey(k) === dNorm) return k;
+  }
+  for (const k of dataKeys) {
+    if (normKey(k).replace(/_/g, ' ') === dNorm) return k;
+  }
+  for (const k of dataKeys) {
+    const kNorm = normKey(k).replace(/_/g, ' ');
+    if (kNorm.includes(dNorm) || dNorm.includes(kNorm)) return k;
+  }
+  return null;
 }
 
 function toWeekStart(dateStr: string): string | null {
@@ -162,6 +191,14 @@ export async function computePerformanceGaps(
 ): Promise<void> {
   const supabase = await createClient();
 
+  // Fetch upload detection to get AI-detected revenue columns
+  const { data: upload } = await supabase
+    .from('uploads')
+    .select('detection')
+    .eq('id', uploadId)
+    .eq('org_id', orgId)
+    .maybeSingle<{ detection: Record<string, unknown> | null }>();
+
   const { data: rows, error: rowsError } = await supabase
     .from('data_rows')
     .select('date, data')
@@ -176,7 +213,30 @@ export async function computePerformanceGaps(
 
   const sampleData = rowsWithDate[0].data as Record<string, unknown>;
   const dataKeys = Object.keys(sampleData);
-  const revenueCol = findColumn(dataKeys, REVENUE_CANDIDATES);
+
+  // Revenue column resolution: AI detection FIRST, then hardcoded fallback
+  let revenueCol: string | null = null;
+
+  if (upload?.detection && typeof upload.detection === 'object') {
+    const det = upload.detection as Record<string, unknown>;
+    if (det.metrics && typeof det.metrics === 'object') {
+      const m = det.metrics as Record<string, unknown>;
+      const detectedRevCols = Array.isArray(m.revenueColumns) ? m.revenueColumns as string[] : [];
+      // Try each AI-detected revenue column until one resolves
+      for (const detCol of detectedRevCols) {
+        const resolved = resolveRevenueHeader(detCol, dataKeys);
+        if (resolved) {
+          revenueCol = resolved;
+          break;
+        }
+      }
+    }
+  }
+
+  // Fallback to hardcoded candidates only if AI detection didn't resolve
+  if (!revenueCol) {
+    revenueCol = findColumn(dataKeys, REVENUE_CANDIDATES);
+  }
   if (!revenueCol) return;
 
   const expectedCol = findColumn(dataKeys, EXPECTED_CANDIDATES);
